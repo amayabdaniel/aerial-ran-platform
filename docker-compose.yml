@@ -1,0 +1,149 @@
+services:
+  # ─── Postgres (single DB, schema-per-service) ─────────────────────
+  postgres:
+    image: postgres:17-alpine
+    container_name: aerial-postgres
+    restart: unless-stopped
+    command:
+      - postgres
+      - -c
+      - shared_preload_libraries=pg_stat_statements
+      - -c
+      - pg_stat_statements.track=all
+      - -c
+      - log_min_duration_statement=200
+      - -c
+      - autovacuum_naptime=30s
+      - -c
+      - shared_buffers=256MB
+      - -c
+      - work_mem=16MB
+      - -c
+      - effective_cache_size=1GB
+    environment:
+      POSTGRES_USER: ${POSTGRES_USER:-aerial_admin}
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:-aerial_dev_pass_change_me}
+      POSTGRES_DB: ${POSTGRES_DB:-aerial}
+    ports:
+      - "127.0.0.1:15432:5432"
+    volumes:
+      - pg_data:/var/lib/postgresql/data
+      - ./db/init.sql:/docker-entrypoint-initdb.d/init.sql:ro
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U $${POSTGRES_USER:-aerial_admin} -d $${POSTGRES_DB:-aerial}"]
+      interval: 5s
+      timeout: 5s
+      retries: 5
+
+  # ─── NATS Jetstream ────────────────────────────────────────────────
+  nats:
+    image: nats:2.10-alpine
+    container_name: aerial-nats
+    restart: unless-stopped
+    command: ["-js", "-sd", "/data", "-m", "8222"]
+    ports:
+      - "127.0.0.1:14222:4222"   # client
+      - "127.0.0.1:18222:8222"   # monitoring
+    volumes:
+      - nats_data:/data
+    healthcheck:
+      test: ["CMD", "wget", "-qO-", "http://localhost:8222/healthz"]
+      interval: 5s
+      timeout: 3s
+      retries: 5
+
+  # ─── Migration runner (one-shot) ───────────────────────────────────
+  migrate:
+    image: postgres:17-alpine
+    container_name: aerial-migrate
+    depends_on:
+      postgres:
+        condition: service_healthy
+    volumes:
+      - ./svc-aerial-iam/migrations:/migrations/iam:ro
+      - ./svc-aerial-subscriber/migrations:/migrations/subscriber:ro
+      - ./svc-aerial-esim/migrations:/migrations/esim:ro
+      - ./svc-aerial-provision/migrations:/migrations/provision:ro
+      - ./svc-aerial-ran-control/migrations:/migrations/ranctl:ro
+      - ./svc-aerial-billing/migrations:/migrations/billing:ro
+      - ./svc-aerial-messaging/migrations:/migrations/messaging:ro
+      - ./scripts/migrate.sh:/migrate.sh:ro
+    environment:
+      PGHOST: postgres
+      PGUSER: ${POSTGRES_USER:-aerial_admin}
+      PGPASSWORD: ${POSTGRES_PASSWORD:-aerial_dev_pass_change_me}
+      PGDATABASE: ${POSTGRES_DB:-aerial}
+    entrypoint: ["sh", "/migrate.sh"]
+
+  # ─── Observability ─────────────────────────────────────────────────
+  otel-collector:
+    image: otel/opentelemetry-collector-contrib:0.111.0
+    container_name: aerial-otel-collector
+    restart: unless-stopped
+    command: ["--config=/etc/otel-collector-config.yaml"]
+    volumes:
+      - ./otel/otel-collector-config.yaml:/etc/otel-collector-config.yaml:ro
+
+  jaeger:
+    image: jaegertracing/all-in-one:1.76.0
+    container_name: aerial-jaeger
+    restart: unless-stopped
+    environment:
+      COLLECTOR_OTLP_ENABLED: "true"
+    ports:
+      - "127.0.0.1:17686:16686"
+
+  prometheus:
+    image: prom/prometheus:v2.55.0
+    container_name: aerial-prometheus
+    restart: unless-stopped
+    volumes:
+      - ./otel/prometheus.yml:/etc/prometheus/prometheus.yml:ro
+      - prometheus_data:/prometheus
+    ports:
+      - "127.0.0.1:19090:9090"
+
+  loki:
+    image: grafana/loki:3.2.0
+    container_name: aerial-loki
+    restart: unless-stopped
+    command: -config.file=/etc/loki/local-config.yaml
+    ports:
+      - "127.0.0.1:13100:3100"
+    volumes:
+      - loki_data:/loki
+
+  grafana:
+    image: grafana/grafana:11.5.0
+    container_name: aerial-grafana
+    restart: unless-stopped
+    ports:
+      - "127.0.0.1:13000:3000"
+    environment:
+      GF_SECURITY_ADMIN_USER: admin
+      GF_SECURITY_ADMIN_PASSWORD: admin
+      GF_USERS_DEFAULT_THEME: dark
+    volumes:
+      - grafana_data:/var/lib/grafana
+      - ./otel/grafana/provisioning:/etc/grafana/provisioning:ro
+      - ./otel/grafana/dashboards:/var/lib/grafana/dashboards:ro
+    depends_on:
+      - prometheus
+      - loki
+
+  postgres-exporter:
+    image: quay.io/prometheuscommunity/postgres-exporter:v0.16.0
+    container_name: aerial-postgres-exporter
+    restart: unless-stopped
+    environment:
+      DATA_SOURCE_NAME: "postgresql://${POSTGRES_USER:-aerial_admin}:${POSTGRES_PASSWORD:-aerial_dev_pass_change_me}@postgres:5432/${POSTGRES_DB:-aerial}?sslmode=disable"
+    depends_on:
+      postgres:
+        condition: service_healthy
+
+volumes:
+  pg_data:
+  nats_data:
+  prometheus_data:
+  loki_data:
+  grafana_data:

@@ -1,0 +1,37 @@
+global:
+  scrape_interval: 15s
+  evaluation_interval: 15s
+  external_labels:
+    cluster: aerial-dev
+
+scrape_configs:
+  - job_name: prometheus
+    static_configs:
+      - targets: ['localhost:9090']
+
+  - job_name: otel-collector
+    static_configs:
+      - targets: ['otel-collector:8889']
+    metrics_path: /metrics
+
+  - job_name: postgres
+    static_configs:
+      - targets: ['postgres-exporter:9187']
+
+  - job_name: nats
+    static_configs:
+      - targets: ['nats:8222']
+    metrics_path: /varz
+
+  # Go services exposed via host networking during dev
+  - job_name: aerial-services
+    static_configs:
+      - targets:
+          - 'host.docker.internal:8081'  # iam
+          - 'host.docker.internal:8082'  # subscriber
+          - 'host.docker.internal:8083'  # esim
+          - 'host.docker.internal:8084'  # provision
+          - 'host.docker.internal:8085'  # ran-control
+          - 'host.docker.internal:8086'  # billing
+          - 'host.docker.internal:8087'  # messaging
+    metrics_path: /metrics

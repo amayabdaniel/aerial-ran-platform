@@ -1,0 +1,5 @@
+SET search_path TO iam, public;
+DROP TABLE IF EXISTS refresh_tokens CASCADE;
+DROP TABLE IF EXISTS devices CASCADE;
+DROP TABLE IF EXISTS users CASCADE;
+DROP TABLE IF EXISTS organizations CASCADE;

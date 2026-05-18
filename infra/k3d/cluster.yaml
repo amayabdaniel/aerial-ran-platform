@@ -1,0 +1,41 @@
+apiVersion: k3d.io/v1alpha5
+kind: Simple
+metadata:
+  name: aerial
+servers: 1
+agents: 2
+image: rancher/k3s:v1.33.6-k3s1
+network: aerial-net
+options:
+  k3d:
+    wait: true
+    timeout: "120s"
+  k3s:
+    extraArgs:
+      - arg: --disable=traefik
+        nodeFilters: [server:*]
+      - arg: --disable=servicelb
+        nodeFilters: [server:*]
+      - arg: --tls-san=host.docker.internal
+        nodeFilters: [server:*]
+  kubeconfig:
+    updateDefaultKubeconfig: true
+    switchCurrentContext: true
+ports:
+  # Open5GS WebUI
+  - port: 127.0.0.1:9999:30099
+    nodeFilters: [server:*]
+  # Open5GS UPF (N3) and N6 — kept on host for ueransim/nrcli access if needed
+  - port: 127.0.0.1:38412:38412/tcp
+    nodeFilters: [server:*]
+  # NATS (optional, for cross-cluster inspection)
+  - port: 127.0.0.1:14222:30422
+    nodeFilters: [server:*]
+volumes:
+  - volume: /tmp/aerial-shared:/aerial-shared
+    nodeFilters: [server:*, agent:*]
+registries:
+  create:
+    name: aerial-registry
+    host: "0.0.0.0"
+    hostPort: "5005"

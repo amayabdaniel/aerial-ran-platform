@@ -1,0 +1,12 @@
+go 1.26.1
+
+use (
+	./lib-aerial-go
+	./svc-aerial-iam
+	./svc-aerial-subscriber
+	./svc-aerial-esim
+	./svc-aerial-provision
+	./svc-aerial-ran-control
+	./svc-aerial-billing
+	./svc-aerial-messaging
+)

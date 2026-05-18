@@ -1,0 +1,77 @@
+# Go
+*.exe
+*.dll
+*.so
+*.dylib
+*.test
+*.out
+*.prof
+vendor/
+bin/
+dist/
+
+# Built service binaries (each svc-aerial-*/server)
+svc-aerial-*/server
+lib-aerial-go/server
+
+# IDE
+.idea/
+.vscode/
+*.swp
+.DS_Store
+
+# Env
+.env
+.env.local
+.env.*.local
+!.env.example
+
+# Secrets
+*.pem
+*.key
+!*.pub.pem
+!*.pub.key
+secrets/
+*.kubeconfig
+kubeconfig
+
+# K8s / Helm
+charts/*/charts/
+charts/*/Chart.lock
+
+# Telecom artifacts
+*.pcap
+*.pcapng
+sionna_cache/
+aerial_cache/
+*.iq
+*.sigmf-data
+*.sigmf-meta
+
+# Logs
+*.log
+logs/
+
+# Build caches
+.gocache/
+.go-build/
+.terragrunt-cache/
+.terraform/
+*.tfstate
+*.tfstate.*
+!*.tfvars.example
+
+# Coverage
+coverage.out
+coverage.html
+*.cover
+
+# Mobile build artifacts
+ios/build/
+ios/Pods/
+android/.gradle/
+android/build/
+android/app/build/
+
+# Test data
+testdata/tmp/

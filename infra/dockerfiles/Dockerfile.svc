@@ -1,0 +1,29 @@
+# Multi-stage build for any svc-aerial-* service.
+# Build with:  docker build -f infra/dockerfiles/Dockerfile.svc \
+#               --build-arg SVC=svc-aerial-iam -t aerial-iam:dev .
+ARG GO_VERSION=1.26
+FROM golang:${GO_VERSION}-alpine AS build
+
+ARG SVC
+WORKDIR /src
+
+# Copy go.work and module roots first for layer-cache friendliness
+COPY go.work go.work
+COPY lib-aerial-go ./lib-aerial-go
+COPY ${SVC} ./${SVC}
+
+# Build the service binary
+WORKDIR /src/${SVC}
+ENV CGO_ENABLED=0 GOOS=linux
+RUN go build -trimpath -ldflags="-s -w" -o /out/server ./cmd/server
+
+FROM alpine:3.20 AS runtime
+
+RUN addgroup -S aerial && adduser -S -G aerial aerial && \
+    apk add --no-cache ca-certificates tzdata
+
+COPY --from=build /out/server /usr/local/bin/server
+
+USER aerial
+EXPOSE 8080
+ENTRYPOINT ["/usr/local/bin/server"]
