@@ -1,0 +1,55 @@
+# 5G-only Open5GS for Phase 0 lab.
+# Pre-provisions 2 test subscribers (matching ueransim-ues default Ki/OPc).
+# Disable 4G NFs (HSS/MME/PCRF/SGWC/SGWU) and PCRF logic in SMF.
+#
+# MongoDB note: the bundled Bitnami MongoDB chart pins a tag that no longer
+# exists in Docker Hub (Bitnami pruned legacy tags in 2025) and the legacy
+# namespace only publishes amd64 manifests. On Apple Silicon k3d nodes the
+# manifest mismatch fails. We disable the bundled chart and deploy a
+# multi-arch official mongo:5.0 ourselves via infra/helm/open5gs/extra-mongo.yaml.
+
+mongodb:
+  enabled: false
+
+# Point all NFs that need MongoDB at our external instance.
+dbURI: "mongodb://open5gs-mongodb.ran.svc.cluster.local/open5gs"
+
+# 4G: off
+hss:   { enabled: false }
+mme:   { enabled: false }
+pcrf:  { enabled: false }
+sgwc:  { enabled: false }
+sgwu:  { enabled: false }
+
+# 5G control + user planes
+smf:
+  enabled: true
+  config:
+    pcrf:
+      enabled: false
+upf:   { enabled: true }
+# webui disabled: its init container uses amd64-only bitnami/mongosh.
+# Subscribers are provisioned via infra/k8s/seed-ues.yaml job (multi-arch mongo:5.0).
+webui:
+  enabled: false
+
+amf:   { enabled: true }
+ausf:  { enabled: true }
+bsf:   { enabled: true }
+nrf:   { enabled: true }
+nssf:  { enabled: true }
+pcf:
+  enabled: true
+  mongodb: { enabled: false }
+scp:
+  enabled: true
+  mongodb: { enabled: false }
+udm:   { enabled: true }
+udr:
+  enabled: true
+  mongodb: { enabled: false }
+
+# populate disabled: gradiant/open5gs-dbctl is amd64-only.
+# Subscribers seeded via infra/k8s/seed-ues.yaml Job using multi-arch mongo:5.0.
+populate:
+  enabled: false

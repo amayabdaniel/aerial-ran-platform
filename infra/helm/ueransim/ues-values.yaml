@@ -1,0 +1,34 @@
+# UERANSIM UEs (2 simulated handsets) attaching to ueransim-gnb.
+# IMSI = MCC(999) + MNC(70) + MSIN starting at initialMSISDN.
+
+# See infra/helm/ueransim/gnb-values.yaml for the 3.2.6 pin rationale.
+image:
+  registry: docker.io
+  repository: gradiant/ueransim
+  tag: 3.2.6
+  pullPolicy: IfNotPresent
+
+count: 2
+initialMSISDN: '0000000001'
+
+mcc: '999'
+mnc: '70'
+key: 465B5CE8B199B49FAA5F0A2EE238A6BC
+op:  E8ED289DEBA952E4283B54E88E6183CA
+opType: OPC
+
+gnb:
+  hostname: ueransim-gnb
+
+sst: 1
+sd: ""
+
+apnList:
+  - type: 'IPv4'
+    apn: 'internet'
+    slice:
+      sst: 1
+
+resources:
+  requests: { cpu: 25m, memory: 32Mi }
+  limits:   { cpu: 250m, memory: 128Mi }

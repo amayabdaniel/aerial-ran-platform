@@ -1,0 +1,59 @@
+# Seed two test UEs into the Open5GS MongoDB so UERANSIM can attach.
+# Open5GS schema (collection: subscribers) — see /usr/share/open5gs/webui/server/models.
+# IMSI = MCC(999) + MNC(70) + MSIN.
+apiVersion: batch/v1
+kind: Job
+metadata:
+  name: open5gs-seed-ues
+  namespace: ran
+spec:
+  ttlSecondsAfterFinished: 600
+  template:
+    spec:
+      restartPolicy: OnFailure
+      containers:
+        - name: seed
+          image: mongo:5.0
+          command:
+            - /bin/sh
+            - -c
+            - |
+              set -e
+              echo "waiting for mongodb..."
+              until mongosh --quiet --host open5gs-mongodb --eval 'db.runCommand({ping:1}).ok' open5gs >/dev/null 2>&1; do sleep 2; done
+              echo "seeding subscribers..."
+              mongosh --quiet --host open5gs-mongodb open5gs <<'JS'
+              const KI  = "465B5CE8B199B49FAA5F0A2EE238A6BC";
+              const OPC = "E8ED289DEBA952E4283B54E88E6183CA";
+              const ueDoc = (imsi) => ({
+                schema_version: 1,
+                imsi,
+                msisdn: [],
+                imeisv: [],
+                mme_host: [], mme_realm: [], purge_flag: [],
+                security: { k: KI, opc: OPC, amf: "8000", op: null },
+                ambr: { downlink: { value: 1, unit: 3 }, uplink: { value: 1, unit: 3 } },
+                slice: [{
+                  sst: 1, sd: "111111", default_indicator: true,
+                  session: [{
+                    name: "internet",
+                    type: 3,
+                    ambr: { downlink: { value: 1, unit: 3 }, uplink: { value: 1, unit: 3 } },
+                    qos:  { index: 9, arp: { priority_level: 8, pre_emption_capability: 1, pre_emption_vulnerability: 1 } },
+                    pcc_rule: []
+                  }]
+                }],
+                access_restriction_data: 32,
+                network_access_mode: 0,
+                subscriber_status: 0,
+                operator_determined_barring: 0,
+                subscribed_rau_tau_timer: 12,
+                __v: 0
+              });
+              ["999700000000001","999700000000002"].forEach(imsi => {
+                db.subscribers.updateOne({imsi}, {$set: ueDoc(imsi)}, {upsert:true});
+                printjson({seeded: imsi});
+              });
+              printjson({total: db.subscribers.countDocuments({})});
+              JS
+              echo "done."

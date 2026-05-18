@@ -1,0 +1,30 @@
+# UERANSIM gNB pointing at Open5GS AMF in the same namespace.
+# Defaults already match: image gradiant/ueransim:3.2.6, PLMN 999/70, SST=1.
+
+amf:
+  hostname: open5gs-amf-ngap
+
+# Pinned to 3.2.6 because gradiant/ueransim:3.2.8 is published as a
+# multi-arch index whose arm64 manifest is marked unsupported, and
+# k3s containerd refuses cross-arch fallback.
+# 3.2.6 is built with arm64 attributes (likely via emulated build) and runs
+# natively on Apple Silicon.
+# Known limitation: 3.2.6 cannot parse Registration Accept NAS from Open5GS
+# 2.7.x (crashes with "Bad constructed NAS message"). Registration auth +
+# security mode succeed; PDU session establishment is blocked until we either
+# build UERANSIM newer than 3.2.6 for arm64 ourselves or move to real HW.
+image:
+  registry: docker.io
+  repository: gradiant/ueransim
+  tag: 3.2.6
+  pullPolicy: IfNotPresent
+
+mcc: '999'
+mnc: '70'
+sst: 1
+sd: ""        # AMF advertises sst-only; leaving SD empty satisfies NG Setup
+tac: '0001'
+
+resources:
+  requests: { cpu: 50m,  memory: 64Mi }
+  limits:   { cpu: 500m, memory: 256Mi }

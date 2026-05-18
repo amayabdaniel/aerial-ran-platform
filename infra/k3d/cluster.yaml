@@ -22,14 +22,8 @@ options:
     updateDefaultKubeconfig: true
     switchCurrentContext: true
 ports:
-  # Open5GS WebUI
+  # Open5GS WebUI (subscriber CRUD)
   - port: 127.0.0.1:9999:30099
-    nodeFilters: [server:*]
-  # Open5GS UPF (N3) and N6 — kept on host for ueransim/nrcli access if needed
-  - port: 127.0.0.1:38412:38412/tcp
-    nodeFilters: [server:*]
-  # NATS (optional, for cross-cluster inspection)
-  - port: 127.0.0.1:14222:30422
     nodeFilters: [server:*]
 volumes:
   - volume: /tmp/aerial-shared:/aerial-shared

@@ -50,9 +50,8 @@ k3d-down:
 k3d-ctx:
 	kubectl config use-context k3d-$(K3D_NAME)
 
-# Add helm repos used by RAN plane
+# Helm repos for platform addons
 helm-repos:
-	helm repo add gradiant https://gradiant.github.io/openverso-charts/
 	helm repo add cnpg https://cloudnative-pg.github.io/charts
 	helm repo add nats https://nats-io.github.io/k8s/helm/charts/
 	helm repo add prometheus-community https://prometheus-community.github.io/helm-charts
@@ -66,12 +65,25 @@ core-up: helm-repos
 	helm upgrade --install cnpg cnpg/cloudnative-pg -n platform --create-namespace
 	helm upgrade --install kube-prom prometheus-community/kube-prometheus-stack -n platform -f infra/helm/kube-prometheus-stack/values.yaml
 
-# Deploy Open5GS + UERANSIM via towards5gs-helm style charts
+# Deploy Open5GS + UERANSIM via Gradiant 5g-charts (OCI registry)
+GRADIANT_REG     := oci://registry-1.docker.io/gradiant
+OPEN5GS_VER      := 2.2.6
+UERANSIM_GNB_VER := 0.2.6
+UERANSIM_UES_VER := 0.1.2
+
 ran-up:
 	kubectl create namespace ran 2>/dev/null || true
-	helm upgrade --install open5gs gradiant/open5gs -n ran -f infra/helm/open5gs/values.yaml
-	helm upgrade --install ueransim gradiant/ueransim-gnb -n ran -f infra/helm/ueransim/gnb-values.yaml
-	helm upgrade --install ueransim-ues gradiant/ueransim-ue -n ran -f infra/helm/ueransim/ue-values.yaml
+	kubectl apply -f infra/k8s/mongo.yaml
+	kubectl -n ran rollout status deploy/open5gs-mongodb --timeout=120s
+	helm upgrade --install open5gs $(GRADIANT_REG)/open5gs --version $(OPEN5GS_VER) -n ran -f infra/helm/open5gs/values.yaml
+	@echo "waiting for AMF deployment to appear..."
+	@for i in $$(seq 1 30); do kubectl -n ran get deploy open5gs-amf >/dev/null 2>&1 && break; sleep 2; done
+	kubectl -n ran rollout status deploy/open5gs-amf --timeout=180s || true
+	@echo "seeding test UEs into mongodb..."
+	kubectl apply -f infra/k8s/seed-ues.yaml
+	kubectl -n ran wait --for=condition=Complete job/open5gs-seed-ues --timeout=120s || true
+	helm upgrade --install ueransim-gnb $(GRADIANT_REG)/ueransim-gnb --version $(UERANSIM_GNB_VER) -n ran -f infra/helm/ueransim/gnb-values.yaml
+	helm upgrade --install ueransim-ues $(GRADIANT_REG)/ueransim-ues --version $(UERANSIM_UES_VER) -n ran -f infra/helm/ueransim/ues-values.yaml
 
 ran-down:
 	helm uninstall ueransim-ues -n ran || true
@@ -80,10 +92,17 @@ ran-down:
 	kubectl delete namespace ran || true
 
 ran-health:
-	@echo "--- AMF ---"
-	@kubectl -n ran logs -l app.kubernetes.io/name=open5gs-amf --tail=20 2>/dev/null | grep -E '(Registration|PDU|UE)' | tail -5 || true
-	@echo "--- UE attach status ---"
-	@kubectl -n ran exec deploy/ueransim-ues-ueransim-ue -- nr-cli imsi-999700000000001 -e "status" 2>/dev/null || echo "UE not ready yet"
+	@echo "--- pods ---"
+	@kubectl -n ran get pods --no-headers 2>/dev/null | awk '{printf "%-40s %s %s\n", $$1, $$2, $$3}'
+	@echo
+	@echo "--- subscribers in mongodb ---"
+	@kubectl -n ran exec deploy/open5gs-mongodb -- mongosh --quiet --host localhost open5gs --eval 'db.subscribers.find({},{imsi:1,_id:0}).toArray()' 2>/dev/null || echo "mongodb not ready"
+	@echo
+	@echo "--- NGAP setup state (gNB <-> AMF) ---"
+	@kubectl -n ran logs deploy/ueransim-gnb --tail=200 2>/dev/null | grep -E 'NG Setup|sctp.*established' | tail -3 || true
+	@echo
+	@echo "--- last UE registration attempt ---"
+	@kubectl -n ran logs deploy/ueransim-ues --tail=200 2>/dev/null | grep -E 'Initial Registration|Authentication|Security Mode|MM-REGISTERED' | tail -5 || true
 
 # ═══════════════════════════════════════════════════════
 # BUILD + TEST
