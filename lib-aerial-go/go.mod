@@ -3,6 +3,7 @@ module github.com/amayabdaniel/aerial-ran-platform/lib-aerial-go
 go 1.26.1
 
 require (
+	github.com/golang-jwt/jwt/v5 v5.2.1
 	github.com/prometheus/client_golang v1.20.5
 	go.opentelemetry.io/otel v1.32.0
 	go.opentelemetry.io/otel/exporters/otlp/otlptrace v1.32.0
