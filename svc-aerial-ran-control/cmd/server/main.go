@@ -1,99 +1,40 @@
-// svc-aerial-ran-control — phase 0 stub: healthz + metrics.
+// svc-aerial-ran-control — observes Open5GS NFs + subscribers via mongo.
 package main
 
 import (
 	"context"
 	"log/slog"
 	"net/http"
-	"os"
-	"os/signal"
-	"syscall"
-	"time"
 
-	healthlib "github.com/amayabdaniel/aerial-ran-platform/lib-aerial-go/health"
-	"github.com/amayabdaniel/aerial-ran-platform/lib-aerial-go/httplog"
-	"github.com/amayabdaniel/aerial-ran-platform/lib-aerial-go/metrics"
-	recoverlib "github.com/amayabdaniel/aerial-ran-platform/lib-aerial-go/recover"
-	"github.com/amayabdaniel/aerial-ran-platform/lib-aerial-go/tracing"
+	jwtlib "github.com/amayabdaniel/aerial-ran-platform/lib-aerial-go/jwt"
+	"github.com/amayabdaniel/aerial-ran-platform/lib-aerial-go/runner"
+	"github.com/amayabdaniel/aerial-ran-platform/svc-aerial-ran-control/internal/ranctl"
 	"github.com/jackc/pgx/v5/pgxpool"
 )
 
-const serviceName = "svc-aerial-ran-control"
-
 func main() {
-	logger := slog.New(slog.NewJSONHandler(os.Stdout, &slog.HandlerOptions{Level: slog.LevelInfo}))
-	slog.SetDefault(logger)
+	mongoURI := runner.EnvOr("OPEN5GS_MONGO_URI", "mongodb://localhost:27017")
+	mongoDB := runner.EnvOr("OPEN5GS_MONGO_DB", "open5gs")
+	plmn := runner.EnvOr("PLMN_MCC", "999") + "/" + runner.EnvOr("PLMN_MNC", "70")
+	nfList := runner.EnvOr("OPEN5GS_NF_METRICS",
+		"amf=http://localhost:9091/metrics,smf=http://localhost:9092/metrics,upf=http://localhost:9093/metrics")
 
-	port := envOr("PORT", "8085")
-	dsn := envOr("DATABASE_URL", "postgres://aerial_admin:aerial_dev_pass_change_me@localhost:5432/aerial?sslmode=disable&search_path=ranctl")
-	otelEndpoint := os.Getenv("OTEL_EXPORTER_OTLP_ENDPOINT")
-
-	ctx, stop := signal.NotifyContext(context.Background(), os.Interrupt, syscall.SIGTERM)
-	defer stop()
-
-	shutdownTracer, err := tracing.Setup(ctx, serviceName, otelEndpoint)
-	if err != nil {
-		logger.Warn("tracing setup failed", "err", err)
-	}
-	defer func() { _ = shutdownTracer(context.Background()) }()
-
-	pool, err := pgxpool.New(ctx, dsn)
-	if err != nil {
-		logger.Error("pgx pool", "err", err)
-		os.Exit(1)
-	}
-	defer pool.Close()
-
-	checker := &healthlib.Checker{}
-	checker.Start(ctx, 5*time.Second, func(c context.Context) error { return pool.Ping(c) })
-
-	mux := http.NewServeMux()
-	mux.Handle("/metrics", metrics.Handler())
-	mux.Handle("/v1/health", checker.Handler())
-	mux.Handle("/v1/ready", checker.Handler())
-
-	handler := chain(
-		recoverlib.Middleware(logger),
-		metrics.Middleware(serviceName),
-		httplog.Middleware(logger),
-	)(mux)
-
-	srv := &http.Server{
-		Addr:              ":" + port,
-		Handler:           handler,
-		ReadHeaderTimeout: 5 * time.Second,
-		ReadTimeout:       15 * time.Second,
-		WriteTimeout:      15 * time.Second,
-		IdleTimeout:       60 * time.Second,
-	}
-
-	go func() {
-		logger.Info("listen", "service", serviceName, "addr", srv.Addr)
-		if err := srv.ListenAndServe(); err != nil && err != http.ErrServerClosed {
-			logger.Error("listen", "err", err)
-			os.Exit(1)
-		}
-	}()
-
-	<-ctx.Done()
-	logger.Info("shutting down")
-	shutdownCtx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
-	defer cancel()
-	_ = srv.Shutdown(shutdownCtx)
-}
-
-func envOr(k, def string) string {
-	if v := os.Getenv(k); v != "" {
-		return v
-	}
-	return def
-}
-
-func chain(mws ...func(http.Handler) http.Handler) func(http.Handler) http.Handler {
-	return func(h http.Handler) http.Handler {
-		for i := len(mws) - 1; i >= 0; i-- {
-			h = mws[i](h)
-		}
-		return h
-	}
+	runner.Run(runner.Opts{
+		ServiceName:  "svc-aerial-ran-control",
+		Port:         runner.EnvOr("PORT", "8085"),
+		DatabaseURL:  runner.EnvOr("DATABASE_URL", "postgres://aerial_admin:aerial_dev_pass_change_me@localhost:15432/aerial?sslmode=disable&search_path=ranctl"),
+		JWTSecret:    runner.EnvOr("JWT_SECRET", "dev-secret-change-in-production-32ch"),
+		JWTIssuer:    runner.EnvOr("JWT_ISSUER", "aerial-ran-platform"),
+		JWTAudience:  runner.EnvOr("JWT_AUDIENCE", "aerial-clients"),
+		OTelEndpoint: runner.EnvOr("OTEL_EXPORTER_OTLP_ENDPOINT", ""),
+		CORSOrigins:  runner.EnvOr("ALLOWED_ORIGINS", "http://localhost:3000,http://localhost:8080"),
+		Mount: func(ctx context.Context, mux *http.ServeMux, _ *pgxpool.Pool, _ *jwtlib.Issuer) {
+			svc, err := ranctl.New(ctx, mongoURI, mongoDB, plmn, ranctl.ParseNFList(nfList))
+			if err != nil {
+				slog.Error("ranctl init", "err", err)
+				return
+			}
+			ranctl.NewHandler(svc).Mount(mux)
+		},
+	})
 }
