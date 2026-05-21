@@ -115,6 +115,29 @@ build:
 		cd $(ROOT); \
 	done
 
+# ═══════════════════════════════════════════════════════
+# SERVICES (host-bound, talk to docker compose & k3d)
+# ═══════════════════════════════════════════════════════
+
+# Build all 7 service binaries into ./bin/
+build-svcs:
+	@mkdir -p $(ROOT)/bin
+	@for svc in $(SERVICES); do \
+		cd $(ROOT)/$$svc && GOWORK=$(GOWORK) go build -o $(ROOT)/bin/$$svc ./cmd/server && cd $(ROOT); \
+		echo "built bin/$$svc"; \
+	done
+
+# Run all services in background (logs to /tmp/aerial-*.log).
+# Requires `make up` and an Open5GS MongoDB port-forward (see scripts/mongo-pf.sh).
+run-svcs: build-svcs
+	@./scripts/run-svcs.sh start
+
+stop-svcs:
+	@./scripts/run-svcs.sh stop
+
+logs-svcs:
+	@tail -F /tmp/aerial-*.log
+
 test-unit:
 	@echo "=== Go Unit Tests ==="
 	@for svc in $(SERVICES) $(LIB); do \

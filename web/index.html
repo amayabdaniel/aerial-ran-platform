@@ -1,0 +1,397 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8" />
+<meta name="viewport" content="width=device-width,initial-scale=1" />
+<title>aerial-ran-platform</title>
+<style>
+  :root {
+    --bg: #0b1020; --panel: #131a32; --border: #2a335c;
+    --text: #e6e9f5; --muted: #8a93b8; --accent: #7c5cff; --ok: #34d399; --warn: #fbbf24; --err: #f87171;
+    --font: -apple-system, BlinkMacSystemFont, "Inter", "Helvetica Neue", Arial, sans-serif;
+    --mono: ui-monospace, SFMono-Regular, "JetBrains Mono", "Menlo", monospace;
+  }
+  * { box-sizing: border-box; }
+  body { margin: 0; background: var(--bg); color: var(--text); font: 14px/1.45 var(--font); }
+  header { padding: 16px 24px; border-bottom: 1px solid var(--border); display: flex; gap: 16px; align-items: center; }
+  header h1 { margin: 0; font-size: 18px; font-weight: 600; }
+  header .who { margin-left: auto; color: var(--muted); font-family: var(--mono); font-size: 12px; }
+  main { max-width: 1280px; margin: 0 auto; padding: 24px; display: grid; grid-template-columns: repeat(2, 1fr); gap: 16px; }
+  section { background: var(--panel); border: 1px solid var(--border); border-radius: 8px; padding: 16px; }
+  section h2 { margin: 0 0 12px 0; font-size: 14px; font-weight: 600; color: var(--accent); text-transform: uppercase; letter-spacing: 0.05em; }
+  button { background: var(--accent); color: white; border: 0; padding: 8px 14px; border-radius: 6px; cursor: pointer; font: inherit; font-weight: 500; }
+  button:hover { filter: brightness(1.1); }
+  button.ghost { background: transparent; border: 1px solid var(--border); color: var(--text); }
+  button.danger { background: var(--err); }
+  input, select { background: #0d1226; color: var(--text); border: 1px solid var(--border); border-radius: 6px; padding: 6px 10px; font: inherit; }
+  input { width: 100%; }
+  label { display: block; margin-bottom: 8px; }
+  label > span { display: block; color: var(--muted); font-size: 12px; margin-bottom: 4px; }
+  table { width: 100%; border-collapse: collapse; font-size: 13px; }
+  th, td { text-align: left; padding: 6px 8px; border-bottom: 1px solid var(--border); }
+  th { color: var(--muted); font-weight: 500; font-size: 11px; text-transform: uppercase; }
+  pre { background: #0d1226; padding: 12px; border-radius: 6px; overflow-x: auto; font-family: var(--mono); font-size: 12px; color: var(--muted); white-space: pre-wrap; word-break: break-all; }
+  .row { display: flex; gap: 8px; align-items: center; }
+  .row > * { flex: 1; }
+  .row > button { flex: 0 0 auto; }
+  .badge { display: inline-block; padding: 2px 8px; border-radius: 99px; font-size: 11px; }
+  .badge.ok { background: rgba(52,211,153,.15); color: var(--ok); }
+  .badge.warn { background: rgba(251,191,36,.15); color: var(--warn); }
+  .badge.err { background: rgba(248,113,113,.15); color: var(--err); }
+  .small { font-size: 11px; color: var(--muted); }
+  .qr { display: flex; gap: 12px; align-items: flex-start; }
+  .qr img { width: 160px; height: 160px; background: white; padding: 8px; border-radius: 6px; }
+  #auth-card { grid-column: span 2; }
+  .stack { display: flex; flex-direction: column; gap: 10px; }
+  .log { font-family: var(--mono); font-size: 12px; max-height: 180px; overflow-y: auto; background: #0d1226; padding: 8px; border-radius: 6px; }
+  .log .ts { color: var(--muted); }
+  .grid-2 { display: grid; grid-template-columns: 1fr 1fr; gap: 8px; }
+</style>
+</head>
+<body>
+<header>
+  <h1>🛰  aerial-ran-platform</h1>
+  <span class="badge ok" id="gw-status">gateway: …</span>
+  <span class="who" id="who"></span>
+</header>
+
+<main>
+  <!-- AUTH -->
+  <section id="auth-card">
+    <h2>Sign in</h2>
+    <div id="logged-out" class="grid-2">
+      <div class="stack">
+        <h3 style="margin:0;font-size:13px;">Sign up</h3>
+        <label><span>Email</span><input id="su-email" placeholder="you@home.local" value="ana@aerial.local"></label>
+        <label><span>Password</span><input id="su-password" type="password" value="correct-horse-battery-staple"></label>
+        <label><span>Display name</span><input id="su-name" placeholder="Ana"></label>
+        <button onclick="signup()">Create account</button>
+      </div>
+      <div class="stack">
+        <h3 style="margin:0;font-size:13px;">Log in</h3>
+        <label><span>Email</span><input id="li-email" value="daniel@aerial.local"></label>
+        <label><span>Password</span><input id="li-password" type="password" value="correct-horse-battery-staple"></label>
+        <button onclick="login()">Log in</button>
+        <p class="small">Demo account already exists: daniel@aerial.local</p>
+      </div>
+    </div>
+    <div id="logged-in" style="display:none">
+      <p>Signed in. Token valid until <span id="exp" class="small"></span>.
+         <button class="ghost" onclick="logout()">Log out</button></p>
+    </div>
+  </section>
+
+  <!-- SIMs -->
+  <section>
+    <h2>SIMs</h2>
+    <p class="small">Each SIM gets a random Ki/OPc and is provisioned into Open5GS MongoDB so the simulated UE can attach.</p>
+    <button onclick="createSim()">+ Issue a SIM</button>
+    <button class="ghost" onclick="loadSims()">Refresh</button>
+    <table id="sims-tbl" style="margin-top:8px"><thead>
+      <tr><th>IMSI</th><th>Status</th><th>Provisioned</th><th></th></tr></thead><tbody></tbody></table>
+  </section>
+
+  <!-- eSIMs -->
+  <section>
+    <h2>eSIMs</h2>
+    <p class="small">Catalog from the mock provider; replace with Airalo by setting AIRALO_CLIENT_ID/SECRET on svc-aerial-esim.</p>
+    <div class="row">
+      <select id="region">
+        <option value="CO">Colombia</option><option value="US">US</option>
+        <option value="EU">Europe</option><option value="GLOBAL">Global</option>
+      </select>
+      <button class="ghost" onclick="refreshCatalog()">Refresh catalog</button>
+    </div>
+    <table id="pkgs-tbl" style="margin-top:8px"><thead>
+      <tr><th>Label</th><th>Data</th><th>Days</th><th>Price</th><th></th></tr></thead><tbody></tbody></table>
+    <h3 style="font-size:13px;margin-top:16px">Issued eSIMs</h3>
+    <button class="ghost" onclick="loadEsims()">Refresh</button>
+    <div id="esim-list" style="margin-top:8px"></div>
+  </section>
+
+  <!-- Plans & Subscription -->
+  <section>
+    <h2>Plans &amp; Subscription</h2>
+    <table id="plans-tbl"><thead><tr><th>Plan</th><th>Price/mo</th><th>Data cap</th><th></th></tr></thead><tbody></tbody></table>
+    <h3 style="font-size:13px;margin-top:16px">My subscriptions</h3>
+    <table id="subs-tbl"><thead><tr><th>Plan</th><th>Status</th><th>Started</th></tr></thead><tbody></tbody></table>
+  </section>
+
+  <!-- Messaging -->
+  <section>
+    <h2>Family Messaging</h2>
+    <p class="small">NATS JetStream backed. WebSocket pushes live updates.</p>
+    <label><span>To user_id (try sending to your own user id)</span><input id="msg-to"></label>
+    <label><span>Message</span><input id="msg-body" placeholder="Hola familia"></label>
+    <button onclick="sendMsg()">Send</button>
+    <button class="ghost" onclick="loadInbox()">Refresh inbox</button>
+    <h3 style="font-size:13px;margin-top:16px">Inbox + live stream</h3>
+    <div id="msg-log" class="log"></div>
+  </section>
+
+  <!-- Usage / Billing -->
+  <section>
+    <h2>Usage this month</h2>
+    <div id="usage" class="stack">
+      <div><span class="small">Data</span> <strong id="u-data">— MB</strong></div>
+      <div><span class="small">Voice</span> <strong id="u-min">— min</strong></div>
+      <div><span class="small">SMS</span> <strong id="u-sms">—</strong></div>
+      <div><span class="small">Cost</span> <strong id="u-cents">—</strong></div>
+    </div>
+    <button onclick="ingestFake()">+ Ingest 100 MB sample event</button>
+    <button class="ghost" onclick="loadUsage()">Refresh</button>
+  </section>
+
+  <!-- RAN -->
+  <section>
+    <h2>RAN status (Open5GS)</h2>
+    <button class="ghost" onclick="loadRan()">Refresh</button>
+    <pre id="ran-pre">click refresh</pre>
+  </section>
+</main>
+
+<script>
+const BASE = '/api';   // through nginx
+let tok = localStorage.getItem('aerial.tok') || '';
+let rtok = localStorage.getItem('aerial.rtok') || '';
+let user = null;
+let ws = null;
+
+async function api(path, opts={}) {
+  opts.headers = opts.headers || {};
+  if (tok) opts.headers['Authorization'] = 'Bearer ' + tok;
+  if (opts.body && typeof opts.body !== 'string') {
+    opts.headers['Content-Type'] = 'application/json';
+    opts.body = JSON.stringify(opts.body);
+  }
+  const r = await fetch(BASE + path, opts);
+  if (r.status === 204) return null;
+  const ct = r.headers.get('content-type') || '';
+  const data = ct.includes('json') ? await r.json() : await r.text();
+  if (!r.ok) throw Object.assign(new Error('http '+r.status), {status: r.status, data});
+  return data;
+}
+
+function setLoggedIn(tp) {
+  tok = tp.access_token; rtok = tp.refresh_token; user = tp.user;
+  localStorage.setItem('aerial.tok', tok);
+  localStorage.setItem('aerial.rtok', rtok);
+  document.getElementById('logged-out').style.display = 'none';
+  document.getElementById('logged-in').style.display = 'block';
+  document.getElementById('who').textContent = user.email + ' • ' + user.id.slice(0,8);
+  document.getElementById('exp').textContent = new Date(tp.access_expires_at).toLocaleTimeString();
+  document.getElementById('msg-to').value = user.id;
+  refreshAll();
+}
+
+async function signup() {
+  try {
+    await api('/iam/v1/auth/signup', { method:'POST', body: {
+      email: byId('su-email').value, password: byId('su-password').value, display_name: byId('su-name').value
+    }});
+  } catch(e){ if (e.status !== 409) return alert('signup: '+e.message); }
+  byId('li-email').value = byId('su-email').value;
+  byId('li-password').value = byId('su-password').value;
+  login();
+}
+async function login() {
+  try {
+    const tp = await api('/iam/v1/auth/login', { method:'POST', body: {
+      email: byId('li-email').value, password: byId('li-password').value, device_fingerprint: 'web-ui', device_name: 'Web UI'
+    }});
+    setLoggedIn(tp);
+  } catch(e){ alert('login: '+(e.data?.message||e.message)); }
+}
+async function logout() {
+  if (ws) ws.close();
+  try { await api('/iam/v1/auth/logout', { method:'POST', body: { refresh_token: rtok }}); } catch {}
+  tok=''; rtok=''; user=null;
+  localStorage.removeItem('aerial.tok'); localStorage.removeItem('aerial.rtok');
+  location.reload();
+}
+
+async function createSim() {
+  try { await api('/subscriber/v1/sims', { method:'POST', body: {} }); loadSims(); }
+  catch(e){ alert('create sim: '+e.message); }
+}
+async function loadSims() {
+  const tb = byId('sims-tbl').querySelector('tbody'); tb.innerHTML = '';
+  const sims = await api('/subscriber/v1/sims');
+  for (const s of sims) {
+    const tr = document.createElement('tr');
+    tr.innerHTML = `<td><code>${s.imsi}</code></td>
+      <td><span class="badge ${s.status==='active'?'ok':'warn'}">${s.status}</span></td>
+      <td>${s.provisioned_at ? '<span class="badge ok">in Open5GS</span>' : '—'}</td>
+      <td><button class="ghost" data-act="${s.status==='active'?'suspend':'resume'}" data-id="${s.id}">${s.status==='active'?'suspend':'resume'}</button>
+          <button class="danger" data-act="terminate" data-id="${s.id}">terminate</button></td>`;
+    tb.appendChild(tr);
+  }
+  tb.onclick = async (ev) => {
+    const b = ev.target.closest('button'); if (!b) return;
+    if (b.dataset.act === 'terminate') await api('/subscriber/v1/sims/'+b.dataset.id, { method:'DELETE' });
+    else await api('/subscriber/v1/sims/'+b.dataset.id+'/'+b.dataset.act, { method:'POST' });
+    loadSims();
+  };
+}
+
+async function refreshCatalog() {
+  const region = byId('region').value;
+  await api('/esim/v1/catalog/refresh?region='+region, { method:'POST' });
+  loadPackages();
+}
+async function loadPackages() {
+  const region = byId('region').value;
+  const pkgs = await api('/esim/v1/packages?region='+region);
+  const tb = byId('pkgs-tbl').querySelector('tbody'); tb.innerHTML = '';
+  for (const p of pkgs) {
+    const tr = document.createElement('tr');
+    tr.innerHTML = `<td>${p.label}</td><td>${p.data_mb} MB</td><td>${p.validity_days}d</td>
+      <td>$${(p.price_usd_cents/100).toFixed(2)}</td>
+      <td><button data-id="${p.id}">Order</button></td>`;
+    tb.appendChild(tr);
+  }
+  tb.onclick = async (ev) => {
+    const b = ev.target.closest('button'); if (!b) return;
+    const e = await api('/esim/v1/esims', { method:'POST', body: { package_id: b.dataset.id }});
+    alert('Ordered. eSIM ' + e.id.slice(0,8));
+    loadEsims();
+  };
+}
+async function loadEsims() {
+  const es = await api('/esim/v1/esims');
+  const c = byId('esim-list'); c.innerHTML = '';
+  for (const e of es) {
+    const div = document.createElement('div');
+    div.style = 'border-top:1px solid var(--border);padding:10px 0;';
+    div.innerHTML = `<div class="qr">
+      ${e.qr_png_b64 ? `<img src="data:image/png;base64,${e.qr_png_b64}" alt="LPA QR">` : ''}
+      <div class="stack">
+        <div><strong>${e.package_label || '(no label)'}</strong> <span class="badge ${e.status==='active'?'ok':'warn'}">${e.status}</span></div>
+        <div class="small">ICCID: <code>${e.iccid||'—'}</code></div>
+        <div class="small">LPA: <code>${e.lpa_string||'—'}</code></div>
+        <div class="small">Usage: ${e.last_usage_mb} / ${e.data_mb} MB</div>
+        <div class="row">
+          <button class="ghost" data-act="usage" data-id="${e.id}">Poll usage</button>
+          <button class="ghost" data-act="activate" data-id="${e.id}">Activate</button>
+          <button class="danger" data-act="cancel" data-id="${e.id}">Cancel</button>
+        </div>
+      </div></div>`;
+    div.onclick = async (ev) => {
+      const b = ev.target.closest('button'); if (!b) return;
+      if (b.dataset.act === 'usage') await api('/esim/v1/esims/'+b.dataset.id+'/usage/refresh', { method:'POST' });
+      if (b.dataset.act === 'activate') await api('/esim/v1/esims/'+b.dataset.id+'/activate', { method:'POST' });
+      if (b.dataset.act === 'cancel') await api('/esim/v1/esims/'+b.dataset.id, { method:'DELETE' });
+      loadEsims();
+    };
+    c.appendChild(div);
+  }
+}
+
+async function loadPlans() {
+  const ps = await api('/provision/v1/plans');
+  const tb = byId('plans-tbl').querySelector('tbody'); tb.innerHTML = '';
+  for (const p of ps) {
+    const tr = document.createElement('tr');
+    tr.innerHTML = `<td>${p.name}<br><span class="small">${p.description||''}</span></td>
+      <td>$${(p.monthly_cents/100).toFixed(2)}</td>
+      <td>${p.data_cap_mb ? p.data_cap_mb+' MB' : 'unlimited'}</td>
+      <td><button data-id="${p.id}">Subscribe</button></td>`;
+    tb.appendChild(tr);
+  }
+  tb.onclick = async (ev) => {
+    const b = ev.target.closest('button'); if (!b) return;
+    await api('/provision/v1/subscriptions', { method:'POST', body: { plan_id: b.dataset.id }});
+    loadSubs();
+  };
+}
+async function loadSubs() {
+  const subs = await api('/provision/v1/subscriptions');
+  const tb = byId('subs-tbl').querySelector('tbody'); tb.innerHTML = '';
+  for (const s of subs) {
+    const tr = document.createElement('tr');
+    tr.innerHTML = `<td>${s.plan_id}</td>
+      <td><span class="badge ${s.status==='active'?'ok':'warn'}">${s.status}</span></td>
+      <td class="small">${new Date(s.started_at).toLocaleString()}</td>`;
+    tb.appendChild(tr);
+  }
+}
+
+async function sendMsg() {
+  await api('/messaging/v1/messages', { method:'POST', body: {
+    to_user_id: byId('msg-to').value, body: byId('msg-body').value
+  }});
+  byId('msg-body').value = '';
+  loadInbox();
+}
+async function loadInbox() {
+  const msgs = await api('/messaging/v1/messages/inbox');
+  const log = byId('msg-log'); log.innerHTML = '';
+  for (const m of msgs) {
+    const d = document.createElement('div');
+    d.innerHTML = `<span class="ts">${new Date(m.created_at).toLocaleTimeString()}</span> ${m.body}`;
+    log.appendChild(d);
+  }
+}
+function openWs() {
+  if (ws) ws.close();
+  const url = (location.protocol === 'https:' ? 'wss://' : 'ws://') + location.host
+    + '/api/messaging/v1/messages/stream';
+  // Sec-WebSocket-Protocol = subprotocol; we sneak token there since native WS API forbids headers
+  ws = new WebSocket(url, ['bearer.' + tok]);
+  ws.onmessage = (ev) => {
+    try { const m = JSON.parse(ev.data); const log = byId('msg-log');
+      const d = document.createElement('div');
+      d.innerHTML = `<span class="ts">${new Date(m.created_at).toLocaleTimeString()}</span> <strong>LIVE</strong> ${m.body}`;
+      log.prepend(d);
+    } catch {}
+  };
+}
+
+async function loadUsage() {
+  const u = await api('/billing/v1/usage');
+  byId('u-data').textContent = u.data_mb + ' MB';
+  byId('u-min').textContent = u.minutes + ' min';
+  byId('u-sms').textContent = u.sms_count;
+  byId('u-cents').textContent = '$' + (u.cents/100).toFixed(2);
+}
+async function ingestFake() {
+  await api('/billing/v1/usage/events', { method:'POST', body: {
+    source: 'manual', data_mb: 100, cents: 25, occurred_at: new Date().toISOString()
+  }});
+  loadUsage();
+}
+
+async function loadRan() {
+  byId('ran-pre').textContent = JSON.stringify(await api('/ran/v1/ran/status'), null, 2);
+}
+
+async function refreshAll() {
+  try { await loadSims(); } catch(e) { console.warn(e); }
+  try { await loadPackages(); } catch(e) { console.warn(e); }
+  try { await loadEsims(); } catch(e) { console.warn(e); }
+  try { await loadPlans(); } catch(e) { console.warn(e); }
+  try { await loadSubs(); } catch(e) { console.warn(e); }
+  try { await loadInbox(); } catch(e) { console.warn(e); }
+  try { await loadUsage(); } catch(e) { console.warn(e); }
+  try { await loadRan(); } catch(e) { console.warn(e); }
+}
+
+function byId(id) { return document.getElementById(id); }
+
+async function init() {
+  try {
+    const r = await fetch('/healthz'); byId('gw-status').textContent = 'gateway: ' + (r.ok?'ok':'down');
+    byId('gw-status').className = 'badge ' + (r.ok?'ok':'err');
+  } catch { byId('gw-status').textContent = 'gateway: unreachable'; byId('gw-status').className = 'badge err'; }
+  if (tok) {
+    try {
+      user = await api('/iam/v1/me');
+      const fake = { access_token: tok, refresh_token: rtok, access_expires_at: Date.now()+15*60*1000, user };
+      setLoggedIn(fake);
+    } catch(e) { tok=''; rtok=''; localStorage.clear(); }
+  }
+}
+init();
+</script>
+</body>
+</html>
