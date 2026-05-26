@@ -128,15 +128,43 @@ build-svcs:
 	done
 
 # Run all services in background (logs to /tmp/aerial-*.log).
-# Requires `make up` and an Open5GS MongoDB port-forward (see scripts/mongo-pf.sh).
+# Requires `make up`, `make ran-up`, and `make mongo-pf-up`.
 run-svcs: build-svcs
 	@./scripts/run-svcs.sh start
 
 stop-svcs:
 	@./scripts/run-svcs.sh stop
 
+status-svcs:
+	@./scripts/run-svcs.sh status
+
 logs-svcs:
-	@tail -F /tmp/aerial-*.log
+	@tail -F /tmp/aerial-svc-aerial-*.log
+
+# Self-restarting kubectl port-forward to Open5GS MongoDB.
+mongo-pf-up:
+	@./scripts/mongo-pf.sh start
+
+mongo-pf-down:
+	@./scripts/mongo-pf.sh stop
+
+# One-button bring-up: docker compose + k3d + Open5GS/UERANSIM + mongo PF + Go services
+all-up: up migrate k3d-up ran-up mongo-pf-up run-svcs
+	@echo ""
+	@echo "═══════════════════════════════════════"
+	@echo "  EVERYTHING UP"
+	@echo "═══════════════════════════════════════"
+	@echo "  Web UI:        http://localhost:18080/ui/"
+	@echo "  LAN URL:       http://$$(ipconfig getifaddr en0 2>/dev/null || ipconfig getifaddr en1 2>/dev/null):18080/ui/"
+	@echo "  Demo (curl):   ./scripts/demo.sh"
+	@echo "  Seed family:   ./scripts/seed-family.sh"
+
+all-down: stop-svcs mongo-pf-down ran-down k3d-down down
+	@echo "everything down"
+
+# Seed 5 family members + SIMs + eSIMs + plans
+seed-family:
+	@./scripts/seed-family.sh
 
 test-unit:
 	@echo "=== Go Unit Tests ==="
@@ -221,6 +249,8 @@ print-services:
 
 .PHONY: up up-no-build down reset logs ps health migrate \
 	k3d-up k3d-down k3d-ctx helm-repos core-up ran-up ran-down ran-health \
-	build test-unit test-integration lint tidy \
+	build build-svcs run-svcs stop-svcs status-svcs logs-svcs \
+	mongo-pf-up mongo-pf-down all-up all-down seed-family \
+	test-unit test-integration lint tidy \
 	security-secrets security-deps security-docker \
 	quick daily env-check print-services

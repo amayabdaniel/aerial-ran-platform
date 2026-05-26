@@ -147,7 +147,9 @@ services:
     container_name: aerial-nginx
     restart: unless-stopped
     ports:
-      - "127.0.0.1:18080:80"
+      # Bind to all interfaces so phones on the same wifi can reach the UI.
+      # If you want loopback-only again, set "127.0.0.1:18080:80".
+      - "0.0.0.0:${NGINX_BIND_PORT:-18080}:80"
     volumes:
       - ./infra/nginx/nginx.conf:/etc/nginx/nginx.conf:ro
       - ./web:/usr/share/nginx/html/ui:ro

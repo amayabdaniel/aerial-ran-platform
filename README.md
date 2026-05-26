@@ -37,28 +37,56 @@ git clone git@github.com:amayabdaniel/aerial-ran-platform.git
 cd aerial-ran-platform
 cp .env.example .env
 
-# 1. Bring up the control-plane infrastructure (postgres, nats, observability, nginx + UI)
-make up
+# Bring up everything (control plane + k3d + Open5GS + Go services).
+make all-up
 
-# 2. Run database migrations (7 schemas)
-make migrate
-
-# 3. Create the k3d cluster + deploy Open5GS + UERANSIM (sim 5G core + cell tower + 2 phones)
-make k3d-up
-make ran-up
-
-# 4. Port-forward Open5GS MongoDB to host so svc-aerial-subscriber can write SIMs into it
-kubectl -n ran port-forward svc/open5gs-mongodb 27017:27017 &
-
-# 5. Build + start the 7 Go services
-make build-svcs
-make run-svcs        # background, logs to /tmp/aerial-*.log
-
-# 6. Open the web UI
-open http://localhost:18080/ui/
+# Optional: seed 5 family members + SIMs + eSIMs + plans
+make seed-family
 ```
 
-Demo user: **daniel@aerial.local / correct-horse-battery-staple** (if you ran `make migrate` you may need to sign up via the UI first).
+`make all-up` prints both your `localhost:18080/ui/` and your **LAN URL** (e.g. `http://192.168.1.5:18080/ui/`) at the end. Open the LAN URL on your laptop — the page shows a QR code at the top that your family can scan with their phone to install the **PWA to their home screen**.
+
+If you prefer the manual route, the individual targets still work: `make up && make migrate && make k3d-up && make ran-up && make mongo-pf-up && make run-svcs`.
+
+## Stop everything
+
+```sh
+make all-down
+```
+
+Or piecemeal: `make stop-svcs`, `make mongo-pf-down`, `make ran-down`, `make k3d-down`, `make down`.
+
+## Demo to your family (on real phones)
+
+1. Run `make all-up` and `make seed-family`. You now have 5 user accounts:
+   - daniel.family@aerial.local
+   - ana.family@aerial.local
+   - sofia.family@aerial.local
+   - mateo.family@aerial.local
+   - abuela.family@aerial.local
+
+   Password for all: `family-demo-2026`
+
+2. On your laptop, open the LAN URL printed by `make all-up`:
+   ```
+   open http://192.168.1.5:18080/ui/
+   ```
+   (Your IP will be different — `make all-up` figures it out.)
+
+3. The top banner shows a QR code. Hand a phone to a family member.
+
+4. They scan the QR, the page opens in Safari/Chrome.
+
+5. **iOS**: Share → Add to Home Screen. **Android**: menu → Install app.
+
+6. They open "Aerial" from the home screen, log in with their email + the password above. They can now:
+   - See their SIM (IMSI 999700000000xx)
+   - Order an eSIM and get a scannable LPA QR
+   - Subscribe to a plan
+   - Send messages to other family members (live via WebSocket)
+   - See their monthly usage rollup
+
+The platform won't actually carry their cell-phone traffic until Phase 1 hardware (USRP + srsRAN + COTS phones with programmable SIMs), but the user-facing flows are real.
 
 ## End-to-end demo via curl
 
@@ -66,16 +94,7 @@ Demo user: **daniel@aerial.local / correct-horse-battery-staple** (if you ran `m
 ./scripts/demo.sh
 ```
 
-Runs every flow: signup → login → subscribe to plan → issue SIM (auto-provisions into Open5GS) → order eSIM → poll usage → send message → query RAN status.
-
-## Stop everything
-
-```sh
-make stop-svcs   # stop Go services
-make down        # docker compose down (keeps volumes)
-make ran-down    # tear down Open5GS/UERANSIM
-make k3d-down    # destroy the k3d cluster
-```
+Hits every endpoint: signup → login → subscribe → SIM → eSIM → usage → message → RAN status. Useful for CI and showing the API surface.
 
 ---
 

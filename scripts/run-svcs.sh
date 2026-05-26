@@ -79,11 +79,16 @@ case "$cmd" in
   status)
     for entry in "${SERVICES[@]}"; do
       IFS=':' read -r svc port schema <<<"$entry"
+      code=$(curl -s -o /dev/null -w '%{http_code}' "http://localhost:$port/v1/health" 2>/dev/null || true)
       pidfile=/tmp/aerial-$svc.pid
+      pid="-"
       if [ -f "$pidfile" ] && kill -0 "$(cat "$pidfile")" 2>/dev/null; then
-        echo "$svc UP pid=$(cat "$pidfile") port=$port"
+        pid=$(cat "$pidfile")
+      fi
+      if [ "$code" = "200" ]; then
+        printf "%-25s UP   :%-5s pid=%s\n" "$svc" "$port" "$pid"
       else
-        echo "$svc DOWN"
+        printf "%-25s DOWN :%-5s pid=%s last-code=%s\n" "$svc" "$port" "$pid" "${code:-no-response}"
       fi
     done
     ;;
