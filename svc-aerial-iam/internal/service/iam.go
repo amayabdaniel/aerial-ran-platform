@@ -16,19 +16,34 @@ import (
 	"github.com/amayabdaniel/aerial-ran-platform/lib-aerial-go/jwt"
 	"github.com/amayabdaniel/aerial-ran-platform/svc-aerial-iam/internal/model"
 	"github.com/amayabdaniel/aerial-ran-platform/svc-aerial-iam/internal/password"
-	"github.com/amayabdaniel/aerial-ran-platform/svc-aerial-iam/internal/repository"
 	"github.com/google/uuid"
 )
 
+// Repo is the persistence surface the service needs. *repository.Postgres
+// satisfies it; tests provide a fake. Keeping it in the service package follows
+// the "consumer defines the interface" convention.
+type Repo interface {
+	CreateOrg(ctx context.Context, name, slug string) (*model.Organization, error)
+	GetOrgBySlug(ctx context.Context, slug string) (*model.Organization, error)
+	CreateUser(ctx context.Context, u *model.User) (*model.User, error)
+	GetUserByEmail(ctx context.Context, email string) (*model.User, error)
+	GetUserByID(ctx context.Context, id string) (*model.User, error)
+	UpsertDevice(ctx context.Context, userID, fingerprint, name string) (*model.Device, error)
+	StoreRefreshToken(ctx context.Context, t *model.RefreshToken) error
+	FindRefreshToken(ctx context.Context, tokenHash string) (*model.RefreshToken, error)
+	RevokeFamily(ctx context.Context, familyID string) error
+	RevokeToken(ctx context.Context, tokenHash string) error
+}
+
 // IAM orchestrates auth flows over the repository and the JWT issuer.
 type IAM struct {
-	repo       *repository.Postgres
+	repo       Repo
 	jwt        *jwt.Issuer
 	refreshTTL time.Duration
 }
 
 // New wires the service.
-func New(repo *repository.Postgres, issuer *jwt.Issuer, refreshTTL time.Duration) *IAM {
+func New(repo Repo, issuer *jwt.Issuer, refreshTTL time.Duration) *IAM {
 	return &IAM{repo: repo, jwt: issuer, refreshTTL: refreshTTL}
 }
 

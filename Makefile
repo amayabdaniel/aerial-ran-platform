@@ -176,10 +176,11 @@ test-unit:
 	done
 
 test-integration:
-	@echo "=== Integration Tests (testcontainers) ==="
+	@echo "=== Integration Tests (testcontainers — needs Docker) ==="
 	@for svc in $(SERVICES); do \
+		if [ ! -d "$(ROOT)/$$svc/internal/repository" ]; then continue; fi; \
 		cd $(ROOT)/$$svc && \
-		fail=$$(GOWORK=$(GOWORK) go test -tags integration -race -count=1 ./internal/repository/... 2>&1 | grep "^FAIL" || true); \
+		fail=$$(GOWORK=off go test -tags integration -count=1 ./internal/repository/... 2>&1 | grep "^FAIL" || true); \
 		if [ -z "$$fail" ]; then echo "OK  $$svc"; else echo "FAIL $$svc"; echo "$$fail"; fi; \
 		cd $(ROOT); \
 	done

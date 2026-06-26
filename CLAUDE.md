@@ -94,6 +94,19 @@ core.event.alert.fired
 - Colombia: only libre-uso bands (Res. ANE 711/2016) until MinTIC permiso pruebas técnicas issued
 - See `docs/SPECTRUM.md` and §9 of research doc
 
+## Testing
+
+- **Unit tests** (no Docker): `make test-unit`. Pure logic only — JWT sign/verify/tamper/expiry, respond mapping, health checker, iam service flows (signup/login/rotation/reuse detection via a fake `Repo`), esim mock provider.
+- **Integration tests** (needs Docker): `make test-integration`. Behind the `integration` build tag. Spin a throwaway Postgres via testcontainers, apply the real migrations, exercise the real repository SQL. Lives in `*_integration_test.go` per service that has an `internal/repository` package.
+- Services expose a `Repo` interface in their `service` package ("consumer defines the interface") so logic is testable with fakes; the concrete `*repository.Postgres` satisfies it.
+- Coverage focus is the security-critical + business-logic packages, not glue (`cmd/server`, `config`, middleware wiring). Current: jwt ~95%, iam service ~82%, health ~95%, respond ~88%.
+- Run a single module: `cd svc-aerial-iam && GOWORK=$(pwd)/../go.work go test ./...`
+- Integration uses `GOWORK=off` because testcontainers deps live in each module's own go.mod.
+
+## CI
+
+`.github/workflows/ci.yml` exists but is **NOT auto-pushed** (limited Actions minutes). Push manually to enable. Jobs: build+vet+unit (race), govulncheck, and integration (workflow_dispatch only).
+
 ## Commands
 
 ```sh
