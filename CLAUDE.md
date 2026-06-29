@@ -94,6 +94,13 @@ core.event.alert.fired
 - Colombia: only libre-uso bands (Res. ANE 711/2016) until MinTIC permiso pruebas técnicas issued
 - See `docs/SPECTRUM.md` and §9 of research doc
 
+## Two deployment modes
+
+1. **Host-bound (fast dev loop)** — control-plane infra (Postgres/NATS/observability/nginx) in docker-compose, the 7 Go services as host processes via `make run-svcs`. Iterate quickly: rebuild one binary, restart it. Gateway on `:18080`. This is what `make all-up` brings up.
+2. **Full Kubernetes (`make k8s-up`)** — everything runs *in* k3d under the `aerial` namespace: Postgres, NATS, a migrate Job, the 7 services (containerized), and the nginx gateway (NodePort 30080 → host `:18081`). Open5GS MongoDB is reached cross-namespace at `open5gs-mongodb.ran.svc.cluster.local`. Images are built locally (`Dockerfile.svc` with `GOWORK=off`) and imported into k3d — no registry. This is the production-shaped path and what Phase 3 (Aerial on GPU nodes) will extend.
+
+Manifests: `infra/k8s/platform/{00-infra,10-migrate-job,20-services,30-gateway}.yaml`. Config in a ConfigMap + Secret (per-service DSNs live in the Secret because they embed the password). `make k8s-down` deletes the namespace.
+
 ## Testing
 
 - **Unit tests** (no Docker): `make test-unit`. Pure logic only — JWT sign/verify/tamper/expiry, respond mapping, health checker, iam service flows (signup/login/rotation/reuse detection via a fake `Repo`), esim mock provider.

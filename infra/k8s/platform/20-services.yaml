@@ -1,0 +1,226 @@
+# The 7 Go control-plane services. Each is a Deployment + ClusterIP Service.
+# Images are built locally and imported into k3d (imagePullPolicy: IfNotPresent).
+# Common shape; per-service env differences: schema DSN, NATS, Mongo.
+
+# ─── iam :8081 ─────────────────────────────────────────────────────────
+apiVersion: apps/v1
+kind: Deployment
+metadata: { name: iam, namespace: aerial, labels: { app: iam } }
+spec:
+  replicas: 1
+  selector: { matchLabels: { app: iam } }
+  template:
+    metadata: { labels: { app: iam } }
+    spec:
+      containers:
+        - name: iam
+          image: aerial-iam:dev
+          imagePullPolicy: IfNotPresent
+          ports: [ { containerPort: 8081 } ]
+          env:
+            - { name: PORT, value: "8081" }
+            - { name: DATABASE_URL, valueFrom: { secretKeyRef: { name: aerial-secrets, key: DATABASE_URL_IAM } } }
+            - { name: JWT_SECRET, valueFrom: { secretKeyRef: { name: aerial-secrets, key: JWT_SECRET } } }
+            - { name: JWT_ISSUER, valueFrom: { configMapKeyRef: { name: aerial-config, key: JWT_ISSUER } } }
+            - { name: JWT_AUDIENCE, valueFrom: { configMapKeyRef: { name: aerial-config, key: JWT_AUDIENCE } } }
+            - { name: ALLOWED_ORIGINS, valueFrom: { configMapKeyRef: { name: aerial-config, key: ALLOWED_ORIGINS } } }
+          readinessProbe: { httpGet: { path: /v1/health, port: 8081 }, initialDelaySeconds: 3, periodSeconds: 5 }
+          resources: { requests: { cpu: 25m, memory: 32Mi }, limits: { cpu: 500m, memory: 128Mi } }
+---
+apiVersion: v1
+kind: Service
+metadata: { name: iam, namespace: aerial }
+spec: { selector: { app: iam }, ports: [ { port: 8081, targetPort: 8081 } ] }
+---
+# ─── subscriber :8082 ──────────────────────────────────────────────────
+apiVersion: apps/v1
+kind: Deployment
+metadata: { name: subscriber, namespace: aerial, labels: { app: subscriber } }
+spec:
+  replicas: 1
+  selector: { matchLabels: { app: subscriber } }
+  template:
+    metadata: { labels: { app: subscriber } }
+    spec:
+      containers:
+        - name: subscriber
+          image: aerial-subscriber:dev
+          imagePullPolicy: IfNotPresent
+          ports: [ { containerPort: 8082 } ]
+          env:
+            - { name: PORT, value: "8082" }
+            - { name: DATABASE_URL, valueFrom: { secretKeyRef: { name: aerial-secrets, key: DATABASE_URL_SUBSCRIBER } } }
+            - { name: JWT_SECRET, valueFrom: { secretKeyRef: { name: aerial-secrets, key: JWT_SECRET } } }
+            - { name: JWT_ISSUER, valueFrom: { configMapKeyRef: { name: aerial-config, key: JWT_ISSUER } } }
+            - { name: JWT_AUDIENCE, valueFrom: { configMapKeyRef: { name: aerial-config, key: JWT_AUDIENCE } } }
+            - { name: ALLOWED_ORIGINS, valueFrom: { configMapKeyRef: { name: aerial-config, key: ALLOWED_ORIGINS } } }
+            - { name: OPEN5GS_MONGO_URI, valueFrom: { configMapKeyRef: { name: aerial-config, key: OPEN5GS_MONGO_URI } } }
+            - { name: OPEN5GS_MONGO_DB, valueFrom: { configMapKeyRef: { name: aerial-config, key: OPEN5GS_MONGO_DB } } }
+            - { name: PLMN_MCC, valueFrom: { configMapKeyRef: { name: aerial-config, key: PLMN_MCC } } }
+            - { name: PLMN_MNC, valueFrom: { configMapKeyRef: { name: aerial-config, key: PLMN_MNC } } }
+          readinessProbe: { httpGet: { path: /v1/health, port: 8082 }, initialDelaySeconds: 3, periodSeconds: 5 }
+          resources: { requests: { cpu: 25m, memory: 32Mi }, limits: { cpu: 500m, memory: 128Mi } }
+---
+apiVersion: v1
+kind: Service
+metadata: { name: subscriber, namespace: aerial }
+spec: { selector: { app: subscriber }, ports: [ { port: 8082, targetPort: 8082 } ] }
+---
+# ─── esim :8083 ────────────────────────────────────────────────────────
+apiVersion: apps/v1
+kind: Deployment
+metadata: { name: esim, namespace: aerial, labels: { app: esim } }
+spec:
+  replicas: 1
+  selector: { matchLabels: { app: esim } }
+  template:
+    metadata: { labels: { app: esim } }
+    spec:
+      containers:
+        - name: esim
+          image: aerial-esim:dev
+          imagePullPolicy: IfNotPresent
+          ports: [ { containerPort: 8083 } ]
+          env:
+            - { name: PORT, value: "8083" }
+            - { name: DATABASE_URL, valueFrom: { secretKeyRef: { name: aerial-secrets, key: DATABASE_URL_ESIM } } }
+            - { name: JWT_SECRET, valueFrom: { secretKeyRef: { name: aerial-secrets, key: JWT_SECRET } } }
+            - { name: JWT_ISSUER, valueFrom: { configMapKeyRef: { name: aerial-config, key: JWT_ISSUER } } }
+            - { name: JWT_AUDIENCE, valueFrom: { configMapKeyRef: { name: aerial-config, key: JWT_AUDIENCE } } }
+            - { name: ALLOWED_ORIGINS, valueFrom: { configMapKeyRef: { name: aerial-config, key: ALLOWED_ORIGINS } } }
+            # AIRALO_CLIENT_ID/SECRET unset → mock provider. Add a secret to go live.
+          readinessProbe: { httpGet: { path: /v1/health, port: 8083 }, initialDelaySeconds: 3, periodSeconds: 5 }
+          resources: { requests: { cpu: 25m, memory: 32Mi }, limits: { cpu: 500m, memory: 128Mi } }
+---
+apiVersion: v1
+kind: Service
+metadata: { name: esim, namespace: aerial }
+spec: { selector: { app: esim }, ports: [ { port: 8083, targetPort: 8083 } ] }
+---
+# ─── provision :8084 ───────────────────────────────────────────────────
+apiVersion: apps/v1
+kind: Deployment
+metadata: { name: provision, namespace: aerial, labels: { app: provision } }
+spec:
+  replicas: 1
+  selector: { matchLabels: { app: provision } }
+  template:
+    metadata: { labels: { app: provision } }
+    spec:
+      containers:
+        - name: provision
+          image: aerial-provision:dev
+          imagePullPolicy: IfNotPresent
+          ports: [ { containerPort: 8084 } ]
+          env:
+            - { name: PORT, value: "8084" }
+            - { name: DATABASE_URL, valueFrom: { secretKeyRef: { name: aerial-secrets, key: DATABASE_URL_PROVISION } } }
+            - { name: JWT_SECRET, valueFrom: { secretKeyRef: { name: aerial-secrets, key: JWT_SECRET } } }
+            - { name: JWT_ISSUER, valueFrom: { configMapKeyRef: { name: aerial-config, key: JWT_ISSUER } } }
+            - { name: JWT_AUDIENCE, valueFrom: { configMapKeyRef: { name: aerial-config, key: JWT_AUDIENCE } } }
+            - { name: ALLOWED_ORIGINS, valueFrom: { configMapKeyRef: { name: aerial-config, key: ALLOWED_ORIGINS } } }
+          readinessProbe: { httpGet: { path: /v1/health, port: 8084 }, initialDelaySeconds: 3, periodSeconds: 5 }
+          resources: { requests: { cpu: 25m, memory: 32Mi }, limits: { cpu: 500m, memory: 128Mi } }
+---
+apiVersion: v1
+kind: Service
+metadata: { name: provision, namespace: aerial }
+spec: { selector: { app: provision }, ports: [ { port: 8084, targetPort: 8084 } ] }
+---
+# ─── ranctl :8085 ──────────────────────────────────────────────────────
+apiVersion: apps/v1
+kind: Deployment
+metadata: { name: ranctl, namespace: aerial, labels: { app: ranctl } }
+spec:
+  replicas: 1
+  selector: { matchLabels: { app: ranctl } }
+  template:
+    metadata: { labels: { app: ranctl } }
+    spec:
+      containers:
+        - name: ranctl
+          image: aerial-ran-control:dev
+          imagePullPolicy: IfNotPresent
+          ports: [ { containerPort: 8085 } ]
+          env:
+            - { name: PORT, value: "8085" }
+            - { name: DATABASE_URL, valueFrom: { secretKeyRef: { name: aerial-secrets, key: DATABASE_URL_RANCTL } } }
+            - { name: JWT_SECRET, valueFrom: { secretKeyRef: { name: aerial-secrets, key: JWT_SECRET } } }
+            - { name: JWT_ISSUER, valueFrom: { configMapKeyRef: { name: aerial-config, key: JWT_ISSUER } } }
+            - { name: JWT_AUDIENCE, valueFrom: { configMapKeyRef: { name: aerial-config, key: JWT_AUDIENCE } } }
+            - { name: ALLOWED_ORIGINS, valueFrom: { configMapKeyRef: { name: aerial-config, key: ALLOWED_ORIGINS } } }
+            - { name: OPEN5GS_MONGO_URI, valueFrom: { configMapKeyRef: { name: aerial-config, key: OPEN5GS_MONGO_URI } } }
+            - { name: OPEN5GS_MONGO_DB, valueFrom: { configMapKeyRef: { name: aerial-config, key: OPEN5GS_MONGO_DB } } }
+            - { name: PLMN_MCC, valueFrom: { configMapKeyRef: { name: aerial-config, key: PLMN_MCC } } }
+            - { name: PLMN_MNC, valueFrom: { configMapKeyRef: { name: aerial-config, key: PLMN_MNC } } }
+            # Point at Open5GS NF metrics services in the ran namespace.
+            - name: OPEN5GS_NF_METRICS
+              value: "amf=http://open5gs-amf-metrics.ran.svc.cluster.local:9090/metrics,smf=http://open5gs-smf-metrics.ran.svc.cluster.local:9090/metrics,upf=http://open5gs-upf-metrics.ran.svc.cluster.local:9090/metrics"
+          readinessProbe: { httpGet: { path: /v1/health, port: 8085 }, initialDelaySeconds: 3, periodSeconds: 5 }
+          resources: { requests: { cpu: 25m, memory: 32Mi }, limits: { cpu: 500m, memory: 128Mi } }
+---
+apiVersion: v1
+kind: Service
+metadata: { name: ranctl, namespace: aerial }
+spec: { selector: { app: ranctl }, ports: [ { port: 8085, targetPort: 8085 } ] }
+---
+# ─── billing :8086 ─────────────────────────────────────────────────────
+apiVersion: apps/v1
+kind: Deployment
+metadata: { name: billing, namespace: aerial, labels: { app: billing } }
+spec:
+  replicas: 1
+  selector: { matchLabels: { app: billing } }
+  template:
+    metadata: { labels: { app: billing } }
+    spec:
+      containers:
+        - name: billing
+          image: aerial-billing:dev
+          imagePullPolicy: IfNotPresent
+          ports: [ { containerPort: 8086 } ]
+          env:
+            - { name: PORT, value: "8086" }
+            - { name: DATABASE_URL, valueFrom: { secretKeyRef: { name: aerial-secrets, key: DATABASE_URL_BILLING } } }
+            - { name: JWT_SECRET, valueFrom: { secretKeyRef: { name: aerial-secrets, key: JWT_SECRET } } }
+            - { name: JWT_ISSUER, valueFrom: { configMapKeyRef: { name: aerial-config, key: JWT_ISSUER } } }
+            - { name: JWT_AUDIENCE, valueFrom: { configMapKeyRef: { name: aerial-config, key: JWT_AUDIENCE } } }
+            - { name: ALLOWED_ORIGINS, valueFrom: { configMapKeyRef: { name: aerial-config, key: ALLOWED_ORIGINS } } }
+          readinessProbe: { httpGet: { path: /v1/health, port: 8086 }, initialDelaySeconds: 3, periodSeconds: 5 }
+          resources: { requests: { cpu: 25m, memory: 32Mi }, limits: { cpu: 500m, memory: 128Mi } }
+---
+apiVersion: v1
+kind: Service
+metadata: { name: billing, namespace: aerial }
+spec: { selector: { app: billing }, ports: [ { port: 8086, targetPort: 8086 } ] }
+---
+# ─── messaging :8087 ───────────────────────────────────────────────────
+apiVersion: apps/v1
+kind: Deployment
+metadata: { name: messaging, namespace: aerial, labels: { app: messaging } }
+spec:
+  replicas: 1
+  selector: { matchLabels: { app: messaging } }
+  template:
+    metadata: { labels: { app: messaging } }
+    spec:
+      containers:
+        - name: messaging
+          image: aerial-messaging:dev
+          imagePullPolicy: IfNotPresent
+          ports: [ { containerPort: 8087 } ]
+          env:
+            - { name: PORT, value: "8087" }
+            - { name: DATABASE_URL, valueFrom: { secretKeyRef: { name: aerial-secrets, key: DATABASE_URL_MESSAGING } } }
+            - { name: JWT_SECRET, valueFrom: { secretKeyRef: { name: aerial-secrets, key: JWT_SECRET } } }
+            - { name: JWT_ISSUER, valueFrom: { configMapKeyRef: { name: aerial-config, key: JWT_ISSUER } } }
+            - { name: JWT_AUDIENCE, valueFrom: { configMapKeyRef: { name: aerial-config, key: JWT_AUDIENCE } } }
+            - { name: ALLOWED_ORIGINS, valueFrom: { configMapKeyRef: { name: aerial-config, key: ALLOWED_ORIGINS } } }
+            - { name: NATS_URL, valueFrom: { configMapKeyRef: { name: aerial-config, key: NATS_URL } } }
+          readinessProbe: { httpGet: { path: /v1/health, port: 8087 }, initialDelaySeconds: 3, periodSeconds: 5 }
+          resources: { requests: { cpu: 25m, memory: 32Mi }, limits: { cpu: 500m, memory: 128Mi } }
+---
+apiVersion: v1
+kind: Service
+metadata: { name: messaging, namespace: aerial }
+spec: { selector: { app: messaging }, ports: [ { port: 8087, targetPort: 8087 } ] }

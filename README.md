@@ -48,10 +48,33 @@ make seed-family
 
 If you prefer the manual route, the individual targets still work: `make up && make migrate && make k3d-up && make ran-up && make mongo-pf-up && make run-svcs`.
 
+## Run the whole platform inside Kubernetes
+
+The host-bound `make all-up` is the fast dev loop. To run the 7 services **in k3d** (containerized, production-shaped — the path Phase 3 extends onto GPU nodes):
+
+```sh
+make k3d-up ran-up        # cluster + Open5GS (if not already up)
+make k8s-up               # build 9 images → import into k3d → apply manifests
+open http://localhost:18081/ui/
+```
+
+`make k8s-up` runs everything in the `aerial` namespace: Postgres, NATS, a migrate Job, the 7 Go services, and the nginx gateway (NodePort 30080 → host `:18081`). Subscriber + ran-control reach Open5GS MongoDB cross-namespace at `open5gs-mongodb.ran.svc.cluster.local`.
+
+```sh
+make k8s-status           # kubectl -n aerial get pods
+make k8s-logs             # tail all service logs
+make k8s-down             # delete the aerial namespace
+```
+
+Notes:
+- Images are built locally and imported into k3d (no registry). On this dev box, k3d reliably lands images on the server node but not always on agents, so a kustomize patch pins `aerial` workloads to the server node. For multi-node scheduling, push to a registry and drop the patch (`infra/k8s/platform/kustomization.yaml`).
+- eSIM runs the **mock** provider unless you add an `AIRALO_CLIENT_ID`/`AIRALO_CLIENT_SECRET` secret to the `esim` deployment.
+
 ## Stop everything
 
 ```sh
-make all-down
+make all-down    # host-bound mode
+make k8s-down    # in-cluster mode (deletes the aerial namespace)
 ```
 
 Or piecemeal: `make stop-svcs`, `make mongo-pf-down`, `make ran-down`, `make k3d-down`, `make down`.
@@ -161,7 +184,8 @@ aerial-ran-platform/
 | Phase | Scope | Status |
 |---|---|---|
 | **0** | k3d + Open5GS + UERANSIM + Go skeletons | ✅ done |
-| **0.5** | 7 real Go services + API gateway + web UI | ✅ done (you are here) |
+| **0.5** | 7 real Go services + API gateway + web UI | ✅ done |
+| **0.6** | LAN/PWA, family seed, test suite, **full in-cluster k8s deploy** | ✅ done (you are here) |
 | **1** | srsRAN/OCUDU + USRP B210 + Open5GS + first FlexRIC xApp (~$5K hardware) | next |
 | **2** | Real Airalo Partners API integration + family eSIMs | next |
 | **3** | NVIDIA Aerial CUDA-Accelerated RAN + DGX Spark + Foxconn RPQN + PTP (~$46K hardware) | future |

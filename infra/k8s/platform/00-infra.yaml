@@ -1,0 +1,162 @@
+# Namespace + shared config + Postgres + NATS for the aerial control plane.
+apiVersion: v1
+kind: Namespace
+metadata:
+  name: aerial
+---
+apiVersion: v1
+kind: Secret
+metadata:
+  name: aerial-secrets
+  namespace: aerial
+type: Opaque
+stringData:
+  POSTGRES_PASSWORD: "aerial_dev_pass_change_me"
+  JWT_SECRET: "dev-secret-change-in-production-32ch"
+  # Per-service DSNs (password is inline, hence kept in the Secret not the ConfigMap).
+  DATABASE_URL_IAM:        "postgres://aerial_admin:aerial_dev_pass_change_me@postgres.aerial.svc.cluster.local:5432/aerial?sslmode=disable&search_path=iam"
+  DATABASE_URL_SUBSCRIBER: "postgres://aerial_admin:aerial_dev_pass_change_me@postgres.aerial.svc.cluster.local:5432/aerial?sslmode=disable&search_path=subscriber"
+  DATABASE_URL_ESIM:       "postgres://aerial_admin:aerial_dev_pass_change_me@postgres.aerial.svc.cluster.local:5432/aerial?sslmode=disable&search_path=esim"
+  DATABASE_URL_PROVISION:  "postgres://aerial_admin:aerial_dev_pass_change_me@postgres.aerial.svc.cluster.local:5432/aerial?sslmode=disable&search_path=provision"
+  DATABASE_URL_RANCTL:     "postgres://aerial_admin:aerial_dev_pass_change_me@postgres.aerial.svc.cluster.local:5432/aerial?sslmode=disable&search_path=ranctl"
+  DATABASE_URL_BILLING:    "postgres://aerial_admin:aerial_dev_pass_change_me@postgres.aerial.svc.cluster.local:5432/aerial?sslmode=disable&search_path=billing"
+  DATABASE_URL_MESSAGING:  "postgres://aerial_admin:aerial_dev_pass_change_me@postgres.aerial.svc.cluster.local:5432/aerial?sslmode=disable&search_path=messaging"
+---
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: aerial-config
+  namespace: aerial
+data:
+  POSTGRES_USER: "aerial_admin"
+  POSTGRES_DB: "aerial"
+  JWT_ISSUER: "aerial-ran-platform"
+  JWT_AUDIENCE: "aerial-clients"
+  NATS_URL: "nats://nats.aerial.svc.cluster.local:4222"
+  PLMN_MCC: "999"
+  PLMN_MNC: "70"
+  # Open5GS MongoDB lives in the `ran` namespace (cross-namespace DNS).
+  OPEN5GS_MONGO_URI: "mongodb://open5gs-mongodb.ran.svc.cluster.local:27017"
+  OPEN5GS_MONGO_DB: "open5gs"
+  ALLOWED_ORIGINS: "http://localhost:18080,http://localhost:18081"
+---
+# ─── Postgres ──────────────────────────────────────────────────────────
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: pg-init
+  namespace: aerial
+data:
+  init.sql: |
+    CREATE SCHEMA IF NOT EXISTS iam;
+    CREATE SCHEMA IF NOT EXISTS subscriber;
+    CREATE SCHEMA IF NOT EXISTS esim;
+    CREATE SCHEMA IF NOT EXISTS provision;
+    CREATE SCHEMA IF NOT EXISTS ranctl;
+    CREATE SCHEMA IF NOT EXISTS billing;
+    CREATE SCHEMA IF NOT EXISTS messaging;
+    CREATE EXTENSION IF NOT EXISTS "uuid-ossp";
+    CREATE EXTENSION IF NOT EXISTS "pgcrypto";
+    CREATE EXTENSION IF NOT EXISTS "pg_stat_statements";
+---
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: postgres
+  namespace: aerial
+  labels: { app: postgres }
+spec:
+  replicas: 1
+  strategy: { type: Recreate }
+  selector: { matchLabels: { app: postgres } }
+  template:
+    metadata:
+      labels: { app: postgres }
+    spec:
+      containers:
+        - name: postgres
+          image: postgres:17-alpine
+          args:
+            - -c
+            - shared_preload_libraries=pg_stat_statements
+            - -c
+            - log_min_duration_statement=200
+          env:
+            - name: POSTGRES_USER
+              valueFrom: { configMapKeyRef: { name: aerial-config, key: POSTGRES_USER } }
+            - name: POSTGRES_DB
+              valueFrom: { configMapKeyRef: { name: aerial-config, key: POSTGRES_DB } }
+            - name: POSTGRES_PASSWORD
+              valueFrom: { secretKeyRef: { name: aerial-secrets, key: POSTGRES_PASSWORD } }
+            - name: PGDATA
+              value: /var/lib/postgresql/data/pgdata
+          ports: [ { containerPort: 5432, name: pg } ]
+          volumeMounts:
+            - { name: data, mountPath: /var/lib/postgresql/data }
+            - { name: init, mountPath: /docker-entrypoint-initdb.d }
+          readinessProbe:
+            exec: { command: ["pg_isready", "-U", "aerial_admin", "-d", "aerial"] }
+            initialDelaySeconds: 5
+            periodSeconds: 5
+          resources:
+            requests: { cpu: 100m, memory: 256Mi }
+            limits:   { cpu: "1",  memory: 1Gi }
+      volumes:
+        - name: init
+          configMap: { name: pg-init }
+        - name: data
+          emptyDir: {}      # lab scope; swap for a PVC to persist across restarts
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: postgres
+  namespace: aerial
+spec:
+  selector: { app: postgres }
+  ports: [ { port: 5432, targetPort: 5432 } ]
+---
+# ─── NATS (JetStream) ──────────────────────────────────────────────────
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: nats
+  namespace: aerial
+  labels: { app: nats }
+spec:
+  replicas: 1
+  selector: { matchLabels: { app: nats } }
+  template:
+    metadata:
+      labels: { app: nats }
+    spec:
+      containers:
+        - name: nats
+          image: nats:2.10-alpine
+          args: ["-js", "-sd", "/data", "-m", "8222"]
+          ports:
+            - { containerPort: 4222, name: client }
+            - { containerPort: 8222, name: monitor }
+          volumeMounts:
+            - { name: data, mountPath: /data }
+          readinessProbe:
+            httpGet: { path: /healthz, port: 8222 }
+            initialDelaySeconds: 3
+            periodSeconds: 5
+          resources:
+            requests: { cpu: 50m, memory: 64Mi }
+            limits:   { cpu: 500m, memory: 256Mi }
+      volumes:
+        - name: data
+          emptyDir: {}
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: nats
+  namespace: aerial
+spec:
+  selector: { app: nats }
+  ports:
+    - { port: 4222, targetPort: 4222, name: client }
+    - { port: 8222, targetPort: 8222, name: monitor }

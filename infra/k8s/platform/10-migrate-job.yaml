@@ -1,0 +1,32 @@
+# One-shot migration Job. Re-runnable: migrate.sh tracks applied versions per
+# schema, so re-applying this Job is idempotent. Uses a name suffix so you can
+# kubectl delete + re-apply; or `kubectl -n aerial delete job -l app=aerial-migrate`.
+apiVersion: batch/v1
+kind: Job
+metadata:
+  name: aerial-migrate
+  namespace: aerial
+  labels: { app: aerial-migrate }
+spec:
+  backoffLimit: 10
+  ttlSecondsAfterFinished: 600
+  template:
+    metadata:
+      labels: { app: aerial-migrate }
+    spec:
+      restartPolicy: OnFailure
+      nodeSelector:
+        kubernetes.io/hostname: k3d-aerial-server-0
+      containers:
+        - name: migrate
+          image: aerial-migrate:dev
+          imagePullPolicy: IfNotPresent
+          env:
+            - name: PGHOST
+              value: postgres.aerial.svc.cluster.local
+            - name: PGUSER
+              valueFrom: { configMapKeyRef: { name: aerial-config, key: POSTGRES_USER } }
+            - name: PGDATABASE
+              valueFrom: { configMapKeyRef: { name: aerial-config, key: POSTGRES_DB } }
+            - name: PGPASSWORD
+              valueFrom: { secretKeyRef: { name: aerial-secrets, key: POSTGRES_PASSWORD } }

@@ -7,14 +7,17 @@ FROM golang:${GO_VERSION}-alpine AS build
 ARG SVC
 WORKDIR /src
 
-# Copy go.work and module roots first for layer-cache friendliness
-COPY go.work go.work
+# Copy the shared lib + the one service. We intentionally do NOT use the Go
+# workspace inside the image (it references all 7 service modules, only one of
+# which is in this build context). Each service's go.mod has a
+# `replace ... => ../lib-aerial-go` directive, so GOWORK=off resolves the lib
+# from the sibling directory.
 COPY lib-aerial-go ./lib-aerial-go
 COPY ${SVC} ./${SVC}
 
 # Build the service binary
 WORKDIR /src/${SVC}
-ENV CGO_ENABLED=0 GOOS=linux
+ENV CGO_ENABLED=0 GOOS=linux GOWORK=off
 RUN go build -trimpath -ldflags="-s -w" -o /out/server ./cmd/server
 
 FROM alpine:3.20 AS runtime

@@ -1,0 +1,19 @@
+# Migrations runner image — bakes every service's SQL + the migrate script so it
+# can run as a Kubernetes Job (no host bind-mounts needed, unlike docker-compose).
+#
+# Build from the repo root:
+#   docker build -f infra/dockerfiles/Dockerfile.migrate -t aerial-migrate:dev .
+FROM postgres:17-alpine
+
+WORKDIR /
+COPY scripts/migrate.sh /migrate.sh
+# Mirror the layout migrate.sh expects: /migrations/<schema>/*.up.sql
+COPY svc-aerial-iam/migrations          /migrations/iam
+COPY svc-aerial-subscriber/migrations   /migrations/subscriber
+COPY svc-aerial-esim/migrations         /migrations/esim
+COPY svc-aerial-provision/migrations    /migrations/provision
+COPY svc-aerial-ran-control/migrations  /migrations/ranctl
+COPY svc-aerial-billing/migrations      /migrations/billing
+COPY svc-aerial-messaging/migrations    /migrations/messaging
+
+ENTRYPOINT ["sh", "/migrate.sh"]

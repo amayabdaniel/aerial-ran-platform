@@ -1,0 +1,7 @@
+# In-cluster API gateway + static web UI.
+# Build from repo root:
+#   docker build -f infra/dockerfiles/Dockerfile.gateway -t aerial-gateway:dev .
+FROM nginx:1.27-alpine
+COPY infra/nginx/nginx.k8s.conf /etc/nginx/nginx.conf
+COPY web/ /usr/share/nginx/html/ui/
+EXPOSE 80

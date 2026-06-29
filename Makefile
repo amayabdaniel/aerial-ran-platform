@@ -166,6 +166,62 @@ all-down: stop-svcs mongo-pf-down ran-down k3d-down down
 seed-family:
 	@./scripts/seed-family.sh
 
+# ═══════════════════════════════════════════════════════
+# FULL KUBERNETES DEPLOY (services run IN k3d, not on host)
+# ═══════════════════════════════════════════════════════
+
+K8S_IMAGES := iam subscriber esim provision ran-control billing messaging
+
+# Build all 9 images (7 services + migrate + gateway), native to the k3d node arch.
+k8s-build:
+	@for s in $(K8S_IMAGES); do \
+		echo ">>> aerial-$$s"; \
+		docker build -q -f infra/dockerfiles/Dockerfile.svc --build-arg SVC=svc-aerial-$$s -t aerial-$$s:dev . >/dev/null || exit 1; \
+	done
+	docker build -q -f infra/dockerfiles/Dockerfile.migrate -t aerial-migrate:dev . >/dev/null
+	docker build -q -f infra/dockerfiles/Dockerfile.gateway -t aerial-gateway:dev . >/dev/null
+	@echo "built 9 images"
+
+# Import images into the running k3d cluster (all nodes).
+k8s-import:
+	k3d image import -c $(K3D_NAME) \
+		aerial-iam:dev aerial-subscriber:dev aerial-esim:dev aerial-provision:dev \
+		aerial-ran-control:dev aerial-billing:dev aerial-messaging:dev \
+		aerial-migrate:dev aerial-gateway:dev
+
+# Apply manifests (via kustomize, which pins workloads to the server node),
+# wait for the migrate Job, then the gateway.
+k8s-apply:
+	kubectl apply -k infra/k8s/platform
+	kubectl -n aerial rollout status deploy/postgres --timeout=120s
+	kubectl -n aerial rollout status deploy/nats --timeout=120s
+	kubectl apply -f infra/k8s/platform/10-migrate-job.yaml
+	kubectl -n aerial wait --for=condition=complete job/aerial-migrate --timeout=180s
+	kubectl -n aerial rollout status deploy/gateway --timeout=180s
+
+# Map the gateway NodePort to a host port (idempotent; safe to re-run).
+k8s-port:
+	@k3d cluster edit $(K3D_NAME) --port-add "18081:30080@loadbalancer" 2>/dev/null || true
+	@echo "gateway: http://localhost:18081/ui/"
+
+# Full in-cluster bring-up (assumes k3d cluster + Open5GS already up via k3d-up/ran-up).
+k8s-up: k8s-build k8s-import k8s-port k8s-apply
+	@echo ""
+	@echo "═══════════════════════════════════════"
+	@echo "  PLATFORM RUNNING IN KUBERNETES"
+	@echo "═══════════════════════════════════════"
+	@echo "  Web UI:  http://localhost:18081/ui/"
+	@echo "  Pods:    kubectl -n aerial get pods"
+
+k8s-status:
+	kubectl -n aerial get pods
+
+k8s-down:
+	kubectl delete namespace aerial --ignore-not-found
+
+k8s-logs:
+	kubectl -n aerial logs -l app -f --max-log-requests 10 --prefix
+
 test-unit:
 	@echo "=== Go Unit Tests ==="
 	@for svc in $(SERVICES) $(LIB); do \
@@ -252,6 +308,7 @@ print-services:
 	k3d-up k3d-down k3d-ctx helm-repos core-up ran-up ran-down ran-health \
 	build build-svcs run-svcs stop-svcs status-svcs logs-svcs \
 	mongo-pf-up mongo-pf-down all-up all-down seed-family \
+	k8s-build k8s-import k8s-apply k8s-port k8s-up k8s-status k8s-down k8s-logs \
 	test-unit test-integration lint tidy \
 	security-secrets security-deps security-docker \
 	quick daily env-check print-services

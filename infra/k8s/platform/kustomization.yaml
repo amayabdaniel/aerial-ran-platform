@@ -1,0 +1,25 @@
+# Applies all platform manifests and pins every workload to the k3d server node.
+#
+# Why pin: on this dev machine, `k3d image import` reliably lands images on the
+# server node but intermittently fails on agent nodes. Locally-built images are
+# not in a registry, so a pod scheduled on an agent would ImagePullBackOff.
+# Pinning to the server node (which always has the images) sidesteps that.
+# For multi-node scheduling, push images to a registry instead and drop this patch.
+apiVersion: kustomize.config.k8s.io/v1beta1
+kind: Kustomization
+
+resources:
+  - 00-infra.yaml
+  - 20-services.yaml
+  - 30-gateway.yaml
+  # 10-migrate-job.yaml is applied separately by `make k8s-apply` after Postgres
+  # is ready, so it is intentionally not listed here.
+
+patches:
+  - target:
+      kind: Deployment
+    patch: |
+      - op: add
+        path: /spec/template/spec/nodeSelector
+        value:
+          kubernetes.io/hostname: k3d-aerial-server-0

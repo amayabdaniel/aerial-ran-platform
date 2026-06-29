@@ -5,6 +5,7 @@ import (
 	"context"
 	"log/slog"
 	"net/http"
+	"os"
 
 	jwtlib "github.com/amayabdaniel/aerial-ran-platform/lib-aerial-go/jwt"
 	"github.com/amayabdaniel/aerial-ran-platform/lib-aerial-go/runner"
@@ -26,8 +27,11 @@ func main() {
 		Mount: func(ctx context.Context, mux *http.ServeMux, pool *pgxpool.Pool, _ *jwtlib.Issuer) {
 			svc, err := messaging.New(ctx, pool, natsURL)
 			if err != nil {
-				slog.Error("messaging init", "err", err)
-				return
+				// Exit non-zero so Kubernetes restarts the pod until NATS is
+				// reachable. Returning here would leave a half-mounted server
+				// that passes health checks but 404s on /v1/messages.
+				slog.Error("messaging init failed; exiting so the pod restarts", "err", err)
+				os.Exit(1)
 			}
 			messaging.NewHandler(svc).Mount(mux)
 		},
