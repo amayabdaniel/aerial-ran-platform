@@ -70,6 +70,23 @@ Notes:
 - Images are built locally and imported into k3d (no registry). On this dev box, k3d reliably lands images on the server node but not always on agents, so a kustomize patch pins `aerial` workloads to the server node. For multi-node scheduling, push to a registry and drop the patch (`infra/k8s/platform/kustomization.yaml`).
 - eSIM runs the **mock** provider unless you add an `AIRALO_CLIENT_ID`/`AIRALO_CLIENT_SECRET` secret to the `esim` deployment.
 
+## Declarative RAN via wavekube (Phase-3 bridge)
+
+`svc-aerial-ran-control` can create **wavekube `GNodeB` custom resources** — the declarative unit the [wavekube](https://github.com/amayabdaniel/wavekube) operator reconciles into a GPU-accelerated Aerial cell. This connects the control plane to the RAN lifecycle operator.
+
+```sh
+make k8s-crd          # install the GNodeB CRD (vendored in infra/k8s/wavekube/)
+
+# create a cell declaratively through the platform API
+curl -X POST http://localhost:18081/api/ran/v1/ran/gnodebs \
+  -H "Authorization: Bearer $TOKEN" -H 'Content-Type: application/json' \
+  -d '{"name":"home-cell-n78","band":"n78","bandwidth":100,"numerology":1,"gpu_type":"L4","max_ues":10}'
+
+kubectl -n aerial get gnb        # the CR the platform just created
+```
+
+`ranctl` runs as the `aerial-ranctl` ServiceAccount with a Role scoped to `gnodebs.ran.wavekube.io`. Endpoints: `POST/GET/DELETE /api/ran/v1/ran/gnodebs[/{name}]`. Without cluster access (host-bound mode) they return 503. Install the wavekube operator itself to actually reconcile the CRs onto GPU nodes (Phase 3).
+
 ## Stop everything
 
 ```sh

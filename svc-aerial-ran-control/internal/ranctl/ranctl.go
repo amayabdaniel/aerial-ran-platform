@@ -12,6 +12,7 @@ import (
 	"time"
 
 	"github.com/amayabdaniel/aerial-ran-platform/lib-aerial-go/respond"
+	"github.com/amayabdaniel/aerial-ran-platform/svc-aerial-ran-control/internal/gnb"
 	"go.mongodb.org/mongo-driver/v2/bson"
 	"go.mongodb.org/mongo-driver/v2/mongo"
 	"go.mongodb.org/mongo-driver/v2/mongo/options"
@@ -43,24 +44,27 @@ type Service struct {
 	plmn       string
 }
 
-// New wires the service. nfEndpoints is e.g. {"amf":"http://open5gs-amf:9090/metrics", ...}
+// New wires the service. nfEndpoints is e.g. {"amf":"http://open5gs-amf:9090/metrics", ...}.
+//
+// Mongo is best-effort: if Open5GS's MongoDB is unreachable at boot (it lives in
+// a different namespace and may lag), the service still starts. Status/Subscribers
+// report the outage instead of taking down the whole service (and its GNodeB API).
 func New(ctx context.Context, mongoURI, mongoDB, plmn string, nfEndpoints map[string]string) (*Service, error) {
-	cli, err := mongo.Connect(options.Client().ApplyURI(mongoURI))
-	if err != nil {
-		return nil, err
-	}
-	pctx, cancel := context.WithTimeout(ctx, 5*time.Second)
-	defer cancel()
-	if err := cli.Ping(pctx, nil); err != nil {
-		return nil, err
-	}
-	return &Service{
+	s := &Service{
 		http:        &http.Client{Timeout: 3 * time.Second},
-		mongo:       cli,
 		mongoDB:     mongoDB,
 		nfEndpoints: nfEndpoints,
 		plmn:        plmn,
-	}, nil
+	}
+	cli, err := mongo.Connect(options.Client().ApplyURI(mongoURI))
+	if err == nil {
+		pctx, cancel := context.WithTimeout(ctx, 5*time.Second)
+		defer cancel()
+		if pingErr := cli.Ping(pctx, nil); pingErr == nil {
+			s.mongo = cli
+		}
+	}
+	return s, nil
 }
 
 // Status probes each NF and the MongoDB subscriber count.
@@ -116,14 +120,95 @@ func (s *Service) Subscribers(ctx context.Context) ([]string, error) {
 	return out, nil
 }
 
-// Handler exposes endpoints.
-type Handler struct{ svc *Service }
+// Handler exposes endpoints. gnb is optional: when nil, the GNodeB routes
+// return 503 (e.g. running host-bound with no cluster access).
+type Handler struct {
+	svc *Service
+	gnb *gnb.Client
+}
 
 func NewHandler(s *Service) *Handler { return &Handler{svc: s} }
+
+// WithGNB attaches a wavekube GNodeB client so the service can declaratively
+// request GPU-accelerated cells.
+func (h *Handler) WithGNB(c *gnb.Client) *Handler { h.gnb = c; return h }
 
 func (h *Handler) Mount(mux *http.ServeMux) {
 	mux.HandleFunc("GET /v1/ran/status", h.status)
 	mux.HandleFunc("GET /v1/ran/subscribers", h.subs)
+	// wavekube GNodeB (declarative RAN) — the Phase-3 bridge.
+	mux.HandleFunc("POST /v1/ran/gnodebs", h.createGNB)
+	mux.HandleFunc("GET /v1/ran/gnodebs", h.listGNB)
+	mux.HandleFunc("GET /v1/ran/gnodebs/{name}", h.getGNB)
+	mux.HandleFunc("DELETE /v1/ran/gnodebs/{name}", h.deleteGNB)
+}
+
+func (h *Handler) createGNB(w http.ResponseWriter, r *http.Request) {
+	if h.gnb == nil {
+		respond.Error(w, http.StatusServiceUnavailable, "gnb_unavailable", "no cluster access; GNodeB API disabled")
+		return
+	}
+	var req gnb.CreateRequest
+	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
+		respond.Error(w, http.StatusBadRequest, "bad_request", "invalid json")
+		return
+	}
+	g, err := h.gnb.Create(r.Context(), req)
+	if err != nil {
+		if gnb.IsAlreadyExists(err) {
+			respond.Error(w, http.StatusConflict, "conflict", err.Error())
+			return
+		}
+		respond.Error(w, http.StatusBadGateway, "k8s_error", err.Error())
+		return
+	}
+	respond.JSON(w, http.StatusCreated, g)
+}
+
+func (h *Handler) listGNB(w http.ResponseWriter, r *http.Request) {
+	if h.gnb == nil {
+		respond.Error(w, http.StatusServiceUnavailable, "gnb_unavailable", "no cluster access; GNodeB API disabled")
+		return
+	}
+	gs, err := h.gnb.List(r.Context())
+	if err != nil {
+		respond.Error(w, http.StatusBadGateway, "k8s_error", err.Error())
+		return
+	}
+	respond.JSON(w, http.StatusOK, gs)
+}
+
+func (h *Handler) getGNB(w http.ResponseWriter, r *http.Request) {
+	if h.gnb == nil {
+		respond.Error(w, http.StatusServiceUnavailable, "gnb_unavailable", "no cluster access; GNodeB API disabled")
+		return
+	}
+	g, err := h.gnb.Get(r.Context(), r.PathValue("name"))
+	if err != nil {
+		if gnb.IsNotFound(err) {
+			respond.Error(w, http.StatusNotFound, "not_found", err.Error())
+			return
+		}
+		respond.Error(w, http.StatusBadGateway, "k8s_error", err.Error())
+		return
+	}
+	respond.JSON(w, http.StatusOK, g)
+}
+
+func (h *Handler) deleteGNB(w http.ResponseWriter, r *http.Request) {
+	if h.gnb == nil {
+		respond.Error(w, http.StatusServiceUnavailable, "gnb_unavailable", "no cluster access; GNodeB API disabled")
+		return
+	}
+	if err := h.gnb.Delete(r.Context(), r.PathValue("name")); err != nil {
+		if gnb.IsNotFound(err) {
+			respond.Error(w, http.StatusNotFound, "not_found", err.Error())
+			return
+		}
+		respond.Error(w, http.StatusBadGateway, "k8s_error", err.Error())
+		return
+	}
+	w.WriteHeader(http.StatusNoContent)
 }
 
 func (h *Handler) status(w http.ResponseWriter, r *http.Request) {

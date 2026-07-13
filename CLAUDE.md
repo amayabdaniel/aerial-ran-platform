@@ -14,7 +14,7 @@ Go microservices on k3d (dev) / k3s (lab), Postgres schema-per-service, NATS Jet
 | svc-aerial-subscriber     | 8082 | subscriber     | `/subscriber/v1/` | SUPI/IMSI/Ki registry; UDR-shadow for Open5GS; sysmoISIM provisioning |
 | svc-aerial-esim           | 8083 | esim           | `/esim/v1/`       | Airalo/EMnify/Soracom adapter; LPA QR issuance; lifecycle webhooks |
 | svc-aerial-provision      | 8084 | provision      | `/provision/v1/`  | Customer subscriptions, plan changes, top-ups |
-| svc-aerial-ran-control    | 8085 | ranctl         | `/ran/v1/`        | xApp host (FlexRIC E2/KPM/RC); ingests RAN KPIs; closed-loop control |
+| svc-aerial-ran-control    | 8085 | ranctl         | `/ran/v1/`        | Open5GS observer + **wavekube GNodeB CRUD** (declarative GPU cells); later FlexRIC xApp host |
 | svc-aerial-billing        | 8086 | billing        | `/billing/v1/`    | CDR ingest → usage rollups → invoices |
 | svc-aerial-messaging      | 8087 | messaging      | `/msg/v1/`        | E2E messaging over NATS Jetstream; presence |
 

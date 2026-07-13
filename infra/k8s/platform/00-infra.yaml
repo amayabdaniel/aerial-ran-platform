@@ -59,6 +59,18 @@ data:
     CREATE EXTENSION IF NOT EXISTS "pgcrypto";
     CREATE EXTENSION IF NOT EXISTS "pg_stat_statements";
 ---
+apiVersion: v1
+kind: PersistentVolumeClaim
+metadata:
+  name: postgres-data
+  namespace: aerial
+spec:
+  accessModes: ["ReadWriteOnce"]
+  resources:
+    requests:
+      storage: 2Gi
+  # k3d ships the local-path provisioner as the default StorageClass.
+---
 apiVersion: apps/v1
 kind: Deployment
 metadata:
@@ -105,7 +117,8 @@ spec:
         - name: init
           configMap: { name: pg-init }
         - name: data
-          emptyDir: {}      # lab scope; swap for a PVC to persist across restarts
+          persistentVolumeClaim:
+            claimName: postgres-data
 ---
 apiVersion: v1
 kind: Service

@@ -1,0 +1,34 @@
+# RBAC so svc-aerial-ran-control can manage wavekube GNodeB custom resources
+# in the `aerial` namespace. The ranctl Deployment runs as this ServiceAccount.
+apiVersion: v1
+kind: ServiceAccount
+metadata:
+  name: aerial-ranctl
+  namespace: aerial
+---
+apiVersion: rbac.authorization.k8s.io/v1
+kind: Role
+metadata:
+  name: aerial-ranctl-gnb
+  namespace: aerial
+rules:
+  - apiGroups: ["ran.wavekube.io"]
+    resources: ["gnodebs"]
+    verbs: ["get", "list", "watch", "create", "update", "patch", "delete"]
+  - apiGroups: ["ran.wavekube.io"]
+    resources: ["gnodebs/status"]
+    verbs: ["get"]
+---
+apiVersion: rbac.authorization.k8s.io/v1
+kind: RoleBinding
+metadata:
+  name: aerial-ranctl-gnb
+  namespace: aerial
+subjects:
+  - kind: ServiceAccount
+    name: aerial-ranctl
+    namespace: aerial
+roleRef:
+  kind: Role
+  name: aerial-ranctl-gnb
+  apiGroup: rbac.authorization.k8s.io

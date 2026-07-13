@@ -137,6 +137,7 @@ spec:
   template:
     metadata: { labels: { app: ranctl } }
     spec:
+      serviceAccountName: aerial-ranctl
       containers:
         - name: ranctl
           image: aerial-ran-control:dev
@@ -144,6 +145,7 @@ spec:
           ports: [ { containerPort: 8085 } ]
           env:
             - { name: PORT, value: "8085" }
+            - { name: GNODEB_NAMESPACE, value: "aerial" }
             - { name: DATABASE_URL, valueFrom: { secretKeyRef: { name: aerial-secrets, key: DATABASE_URL_RANCTL } } }
             - { name: JWT_SECRET, valueFrom: { secretKeyRef: { name: aerial-secrets, key: JWT_SECRET } } }
             - { name: JWT_ISSUER, valueFrom: { configMapKeyRef: { name: aerial-config, key: JWT_ISSUER } } }

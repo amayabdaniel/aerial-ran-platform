@@ -12,6 +12,7 @@ resources:
   - 00-infra.yaml
   - 20-services.yaml
   - 30-gateway.yaml
+  - 40-ranctl-rbac.yaml
   # 10-migrate-job.yaml is applied separately by `make k8s-apply` after Postgres
   # is ready, so it is intentionally not listed here.
 

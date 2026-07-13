@@ -8,6 +8,7 @@ import (
 
 	jwtlib "github.com/amayabdaniel/aerial-ran-platform/lib-aerial-go/jwt"
 	"github.com/amayabdaniel/aerial-ran-platform/lib-aerial-go/runner"
+	"github.com/amayabdaniel/aerial-ran-platform/svc-aerial-ran-control/internal/gnb"
 	"github.com/amayabdaniel/aerial-ran-platform/svc-aerial-ran-control/internal/ranctl"
 	"github.com/jackc/pgx/v5/pgxpool"
 )
@@ -34,7 +35,20 @@ func main() {
 				slog.Error("ranctl init", "err", err)
 				return
 			}
-			ranctl.NewHandler(svc).Mount(mux)
+			h := ranctl.NewHandler(svc)
+
+			// Attach the wavekube GNodeB client. Best-effort: if there's no
+			// cluster access (e.g. running host-bound), the GNodeB routes return
+			// 503 rather than failing the whole service.
+			gnbNS := runner.EnvOr("GNODEB_NAMESPACE", "aerial")
+			if gc, err := gnb.New(gnbNS); err != nil {
+				slog.Warn("gnb client unavailable; GNodeB API will return 503", "err", err)
+			} else {
+				slog.Info("gnb client ready", "namespace", gc.Namespace())
+				h = h.WithGNB(gc)
+			}
+
+			h.Mount(mux)
 		},
 	})
 }

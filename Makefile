@@ -204,8 +204,12 @@ k8s-port:
 	@k3d cluster edit $(K3D_NAME) --port-add "18081:30080@loadbalancer" 2>/dev/null || true
 	@echo "gateway: http://localhost:18081/ui/"
 
+# Install the wavekube GNodeB CRD (vendored). Safe to re-run.
+k8s-crd:
+	kubectl apply -f infra/k8s/wavekube/gnodeb-crd.yaml
+
 # Full in-cluster bring-up (assumes k3d cluster + Open5GS already up via k3d-up/ran-up).
-k8s-up: k8s-build k8s-import k8s-port k8s-apply
+k8s-up: k8s-build k8s-import k8s-port k8s-crd k8s-apply
 	@echo ""
 	@echo "═══════════════════════════════════════"
 	@echo "  PLATFORM RUNNING IN KUBERNETES"
@@ -308,7 +312,7 @@ print-services:
 	k3d-up k3d-down k3d-ctx helm-repos core-up ran-up ran-down ran-health \
 	build build-svcs run-svcs stop-svcs status-svcs logs-svcs \
 	mongo-pf-up mongo-pf-down all-up all-down seed-family \
-	k8s-build k8s-import k8s-apply k8s-port k8s-up k8s-status k8s-down k8s-logs \
+	k8s-build k8s-import k8s-apply k8s-port k8s-crd k8s-up k8s-status k8s-down k8s-logs \
 	test-unit test-integration lint tidy \
 	security-secrets security-deps security-docker \
 	quick daily env-check print-services
