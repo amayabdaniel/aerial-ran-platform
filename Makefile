@@ -226,6 +226,35 @@ k8s-down:
 k8s-logs:
 	kubectl -n aerial logs -l app -f --max-log-requests 10 --prefix
 
+# ═══════════════════════════════════════════════════════
+# WAVEKUBE OPERATOR (the RAN lifecycle reconciler; sibling repo)
+# Deploys github.com/amayabdaniel/wavekube into k3d so GNodeB CRs created by
+# svc-aerial-ran-control actually reconcile (Pending → Running).
+# ═══════════════════════════════════════════════════════
+
+WAVEKUBE_DIR ?= ../wavekube
+
+wavekube-up:
+	@[ -d "$(WAVEKUBE_DIR)" ] || { echo "wavekube repo not found at $(WAVEKUBE_DIR); set WAVEKUBE_DIR=..."; exit 1; }
+	docker build --platform linux/arm64 -q -t wavekube:dev $(WAVEKUBE_DIR) >/dev/null
+	k3d image import -c $(K3D_NAME) wavekube:dev
+	kubectl apply -f $(WAVEKUBE_DIR)/config/crd/bases/
+	kubectl create namespace wavekube-system 2>/dev/null || true
+	helm upgrade --install wavekube $(WAVEKUBE_DIR)/deploy/helm/wavekube -n wavekube-system \
+		--set image.repository=wavekube --set image.tag=dev --set image.pullPolicy=IfNotPresent
+	@# Pin to the server node (only node with the imported image on this k3d setup).
+	kubectl -n wavekube-system patch deploy wavekube-controller --type=json \
+		-p '[{"op":"add","path":"/spec/template/spec/nodeSelector","value":{"kubernetes.io/hostname":"k3d-aerial-server-0"}}]'
+	kubectl -n wavekube-system rollout status deploy/wavekube-controller --timeout=120s
+	@echo "wavekube operator running; GNodeB CRs will now reconcile"
+
+wavekube-down:
+	helm uninstall wavekube -n wavekube-system 2>/dev/null || true
+	kubectl delete namespace wavekube-system --ignore-not-found
+
+wavekube-logs:
+	kubectl -n wavekube-system logs deploy/wavekube-controller -f
+
 test-unit:
 	@echo "=== Go Unit Tests ==="
 	@for svc in $(SERVICES) $(LIB); do \
@@ -313,6 +342,7 @@ print-services:
 	build build-svcs run-svcs stop-svcs status-svcs logs-svcs \
 	mongo-pf-up mongo-pf-down all-up all-down seed-family \
 	k8s-build k8s-import k8s-apply k8s-port k8s-crd k8s-up k8s-status k8s-down k8s-logs \
+	wavekube-up wavekube-down wavekube-logs \
 	test-unit test-integration lint tidy \
 	security-secrets security-deps security-docker \
 	quick daily env-check print-services
