@@ -85,7 +85,26 @@ curl -X POST http://localhost:18081/api/ran/v1/ran/gnodebs \
 kubectl -n aerial get gnb        # the CR the platform just created
 ```
 
-`ranctl` runs as the `aerial-ranctl` ServiceAccount with a Role scoped to `gnodebs.ran.wavekube.io`. Endpoints: `POST/GET/DELETE /api/ran/v1/ran/gnodebs[/{name}]`. Without cluster access (host-bound mode) they return 503. Install the wavekube operator itself to actually reconcile the CRs onto GPU nodes (Phase 3).
+`ranctl` runs as the `aerial-ranctl` ServiceAccount with a Role scoped to `gnodebs.ran.wavekube.io`. Endpoints: `POST/GET/DELETE /api/ran/v1/ran/gnodebs[/{name}]`. Without cluster access (host-bound mode) they return 503.
+
+### Closing the loop: deploy the wavekube operator
+
+```sh
+make wavekube-up      # build (arm64) + import + install the operator from ../wavekube
+```
+
+Then a GNodeB created through the platform API is **reconciled by the operator**:
+
+```
+POST /api/ran/v1/ran/gnodebs        →  GNodeB CR (Pending)
+        ↓ wavekube operator reconciles
+  status.phase: Running
+  + Deployment <name>-ran   (nvidia.com/gpu:1, AERIAL_PHY_* env from the spec)
+  + Service    <name>-metrics:9090
+  (owned by the CR → deleting the GNodeB garbage-collects both)
+```
+
+Verified end-to-end on k3d. The gNB pod stays **Pending** on a laptop (no `nvidia.com/gpu.present` node) — expected; the full control-plane → operator → child-resource chain works, only real GPU hardware is missing (Phase 3). `make wavekube-down` removes the operator.
 
 ## Stop everything
 
