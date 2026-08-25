@@ -9,16 +9,21 @@ package gnb
 
 import (
 	"context"
+	"errors"
 	"fmt"
 
-	"k8s.io/apimachinery/pkg/apis/meta/v1/unstructured"
+	apierrors "k8s.io/apimachinery/pkg/api/errors"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
+	"k8s.io/apimachinery/pkg/apis/meta/v1/unstructured"
 	"k8s.io/apimachinery/pkg/runtime/schema"
 	"k8s.io/client-go/dynamic"
 	"k8s.io/client-go/rest"
 	"k8s.io/client-go/tools/clientcmd"
-	"k8s.io/apimachinery/pkg/api/errors"
 )
+
+// ErrInvalidRequest marks client input errors (bad/missing fields) so the HTTP
+// layer can map them to 400 rather than a generic 502 gateway error.
+var ErrInvalidRequest = errors.New("invalid gnodeb request")
 
 // GVR for wavekube GNodeB resources.
 var gvr = schema.GroupVersionResource{
@@ -89,7 +94,7 @@ func New(namespace string) (*Client, error) {
 // Create makes a GNodeB CR from the request, filling sensible defaults.
 func (c *Client) Create(ctx context.Context, req CreateRequest) (*GNodeB, error) {
 	if req.Name == "" {
-		return nil, fmt.Errorf("name required")
+		return nil, fmt.Errorf("%w: name required", ErrInvalidRequest)
 	}
 	def := func(s, d string) string { if s == "" { return d }; return s }
 	defi := func(i, d int) int { if i == 0 { return d }; return i }
@@ -161,10 +166,13 @@ func (c *Client) Delete(ctx context.Context, name string) error {
 }
 
 // IsNotFound reports whether err is a k8s NotFound (for handler mapping).
-func IsNotFound(err error) bool { return errors.IsNotFound(err) }
+func IsNotFound(err error) bool { return apierrors.IsNotFound(err) }
 
 // IsAlreadyExists reports whether err is a k8s AlreadyExists.
-func IsAlreadyExists(err error) bool { return errors.IsAlreadyExists(err) }
+func IsAlreadyExists(err error) bool { return apierrors.IsAlreadyExists(err) }
+
+// IsInvalidRequest reports whether err is a client input error (maps to 400).
+func IsInvalidRequest(err error) bool { return errors.Is(err, ErrInvalidRequest) }
 
 // Namespace returns the namespace the client manages.
 func (c *Client) Namespace() string { return c.namespace }

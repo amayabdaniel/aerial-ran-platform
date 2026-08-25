@@ -155,6 +155,10 @@ func (h *Handler) createGNB(w http.ResponseWriter, r *http.Request) {
 	}
 	g, err := h.gnb.Create(r.Context(), req)
 	if err != nil {
+		if gnb.IsInvalidRequest(err) {
+			respond.Error(w, http.StatusBadRequest, "bad_request", err.Error())
+			return
+		}
 		if gnb.IsAlreadyExists(err) {
 			respond.Error(w, http.StatusConflict, "conflict", err.Error())
 			return
