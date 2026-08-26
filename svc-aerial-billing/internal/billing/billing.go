@@ -11,6 +11,7 @@ import (
 
 	"github.com/amayabdaniel/aerial-ran-platform/lib-aerial-go/jwt"
 	"github.com/amayabdaniel/aerial-ran-platform/lib-aerial-go/respond"
+	"github.com/jackc/pgx/v5"
 	"github.com/jackc/pgx/v5/pgxpool"
 )
 
@@ -37,16 +38,24 @@ type Rollup struct {
 	UpdatedAt time.Time `json:"updated_at"`
 }
 
-type Service struct{ pool *pgxpool.Pool }
+// querier is the subset of *pgxpool.Pool the service uses. Declaring it lets
+// tests substitute a fake and exercise error handling without a real database.
+type querier interface {
+	Begin(ctx context.Context) (pgx.Tx, error)
+	QueryRow(ctx context.Context, sql string, args ...any) pgx.Row
+	Query(ctx context.Context, sql string, args ...any) (pgx.Rows, error)
+}
 
-func New(pool *pgxpool.Pool) *Service { return &Service{pool: pool} }
+type Service struct{ db querier }
+
+func New(pool *pgxpool.Pool) *Service { return &Service{db: pool} }
 
 // Ingest writes a raw event and updates the rollup row in the same transaction.
 func (s *Service) Ingest(ctx context.Context, e UsageEvent) error {
 	if e.OccurredAt.IsZero() {
 		e.OccurredAt = time.Now()
 	}
-	tx, err := s.pool.Begin(ctx)
+	tx, err := s.db.Begin(ctx)
 	if err != nil {
 		return err
 	}
@@ -82,23 +91,28 @@ func (s *Service) Ingest(ctx context.Context, e UsageEvent) error {
 func (s *Service) MyMonth(ctx context.Context, orgID, userID string) (*Rollup, error) {
 	monthStart := time.Date(time.Now().Year(), time.Now().Month(), 1, 0, 0, 0, 0, time.UTC)
 	r := &Rollup{OrgID: orgID, UserID: &userID, Month: monthStart}
-	err := s.pool.QueryRow(ctx,
+	err := s.db.QueryRow(ctx,
 		`SELECT data_mb, minutes, sms_count, cents, updated_at
 		   FROM billing.usage_rollups
 		  WHERE org_id = $1::uuid AND user_id = $2::uuid AND month = $3`,
 		orgID, userID, monthStart,
 	).Scan(&r.DataMB, &r.Minutes, &r.SMSCount, &r.Cents, &r.UpdatedAt)
-	if err != nil {
-		// Treat empty as zero rollup (not an error).
+	if errors.Is(err, pgx.ErrNoRows) {
+		// No rollup yet this month → genuinely zero usage, not an error.
 		r.UpdatedAt = time.Now()
 		return r, nil
+	}
+	if err != nil {
+		// A real DB error must surface — masking it as "zero usage" would show
+		// every user $0.00 during an outage.
+		return nil, err
 	}
 	return r, nil
 }
 
 func (s *Service) OrgMonth(ctx context.Context, orgID string) ([]Rollup, error) {
 	monthStart := time.Date(time.Now().Year(), time.Now().Month(), 1, 0, 0, 0, 0, time.UTC)
-	rows, err := s.pool.Query(ctx,
+	rows, err := s.db.Query(ctx,
 		`SELECT org_id::text, user_id::text, month, data_mb, minutes, sms_count, cents, updated_at
 		   FROM billing.usage_rollups WHERE org_id = $1::uuid AND month = $2
 		   ORDER BY cents DESC`,
@@ -182,6 +196,3 @@ func ptr(p *string) string {
 	}
 	return *p
 }
-
-// silence unused import
-var _ = errors.New
