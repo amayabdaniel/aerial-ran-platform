@@ -10,6 +10,10 @@ var (
 	ErrSIMNotFound = errors.New("sim not found")
 	ErrSIMExists   = errors.New("sim with that IMSI already exists")
 	ErrBadInput    = errors.New("invalid input")
+	// ErrProvisioning marks a failure to provision the SIM into the 5G core
+	// (Open5GS). The SIM row is stored but the UE cannot attach until it is
+	// re-provisioned (Resume), so callers must not treat it as a clean success.
+	ErrProvisioning = errors.New("sim provisioning into 5G core failed")
 )
 
 // SIM card record.

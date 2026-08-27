@@ -14,22 +14,46 @@ import (
 	"github.com/amayabdaniel/aerial-ran-platform/svc-aerial-subscriber/internal/repository"
 )
 
+// Repo is the persistence surface the service needs (consumer-defined so tests
+// can substitute a fake). *repository.Postgres satisfies it.
+type Repo interface {
+	NextMSIN(ctx context.Context, mcc, mnc string) (int64, error)
+	Create(ctx context.Context, s *model.SIM) (*model.SIM, error)
+	GetByID(ctx context.Context, id string) (*model.SIM, error)
+	ListByOrg(ctx context.Context, orgID string) ([]*model.SIM, error)
+	MarkProvisioned(ctx context.Context, id string) error
+	UpdateStatus(ctx context.Context, id, status string) error
+}
+
+// Provisioner writes/removes subscribers in the 5G core (Open5GS MongoDB).
+// *open5gs.Client satisfies it. May be nil when no 5GC is reachable.
+type Provisioner interface {
+	Upsert(ctx context.Context, s open5gs.Subscriber) error
+	Delete(ctx context.Context, imsi string) error
+}
+
 // SIM is the service.
 type SIM struct {
-	repo     *repository.Postgres
-	open5gs  *open5gs.Client
+	repo     Repo
+	open5gs  Provisioner
 	plmnMcc  string
 	plmnMnc  string
 }
 
-// New wires the service.
+// New wires the service. A nil mongo client is stored as a nil Provisioner
+// (not a typed-nil interface) so the s.open5gs != nil guards behave correctly.
 func New(repo *repository.Postgres, mongo *open5gs.Client, mcc, mnc string) *SIM {
-	return &SIM{repo: repo, open5gs: mongo, plmnMcc: mcc, plmnMnc: mnc}
+	s := &SIM{repo: repo, plmnMcc: mcc, plmnMnc: mnc}
+	if mongo != nil {
+		s.open5gs = mongo
+	}
+	return s
 }
 
-// Create generates Ki/OPc and inserts both into Postgres + Open5GS MongoDB
-// in that order. If the Mongo write fails the SIM is created but unprovisioned
-// (status = active, provisioned_at = null) — the operator can retry.
+// Create generates Ki/OPc and inserts the SIM into Postgres, then provisions it
+// into Open5GS MongoDB. If the Mongo write fails it returns ErrProvisioning
+// (the SIM row is kept and can be re-provisioned via Resume) rather than
+// reporting a success for a SIM the UE cannot attach with.
 func (s *SIM) Create(ctx context.Context, orgID string, req model.CreateSIMRequest) (*model.SIM, error) {
 	if strings.TrimSpace(orgID) == "" {
 		return nil, errors.Join(model.ErrBadInput, errors.New("org_id required"))
@@ -84,18 +108,23 @@ func (s *SIM) Create(ctx context.Context, orgID string, req model.CreateSIMReque
 		return nil, err
 	}
 
-	// Provision into Open5GS MongoDB so UEs can attach with this SIM.
+	// Provision into Open5GS MongoDB so UEs can attach with this SIM. If this
+	// fails, the SIM row is kept (durable, re-provisionable via Resume) but we
+	// surface the error — returning a "provisioned" success for a SIM the UE
+	// can't actually attach with would be a lie.
 	if s.open5gs != nil {
-		err := s.open5gs.Upsert(ctx, open5gs.Subscriber{
+		if err := s.open5gs.Upsert(ctx, open5gs.Subscriber{
 			IMSI: created.IMSI,
 			APN:  created.APN,
 			Ki:   created.Ki,
 			OPc:  created.OPc,
 			AMF:  created.AMF,
 			SST:  created.SST,
-		})
-		if err == nil {
-			_ = s.repo.MarkProvisioned(ctx, created.ID)
+		}); err != nil {
+			return nil, errors.Join(model.ErrProvisioning, err)
+		}
+		if err := s.repo.MarkProvisioned(ctx, created.ID); err != nil {
+			return nil, err
 		}
 	}
 

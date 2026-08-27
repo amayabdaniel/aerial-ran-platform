@@ -100,6 +100,8 @@ func writeServiceErr(w http.ResponseWriter, err error) {
 		respond.Error(w, http.StatusConflict, "conflict", err.Error())
 	case errors.Is(err, model.ErrBadInput):
 		respond.Error(w, http.StatusBadRequest, "bad_request", err.Error())
+	case errors.Is(err, model.ErrProvisioning):
+		respond.Error(w, http.StatusBadGateway, "provisioning_failed", err.Error())
 	default:
 		respond.DBError(w, err)
 	}
