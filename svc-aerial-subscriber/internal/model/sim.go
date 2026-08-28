@@ -14,6 +14,11 @@ var (
 	// (Open5GS). The SIM row is stored but the UE cannot attach until it is
 	// re-provisioned (Resume), so callers must not treat it as a clean success.
 	ErrProvisioning = errors.New("sim provisioning into 5G core failed")
+	// ErrDeprovisioning marks a failure to remove the SIM from the 5G core.
+	// Reporting "suspended"/"terminated" while the UE can still attach would be
+	// a dangerous lie (a line the operator believes is cut is still live), so
+	// the status change is not applied and the failure is surfaced.
+	ErrDeprovisioning = errors.New("sim de-provisioning from 5G core failed")
 )
 
 // SIM card record.

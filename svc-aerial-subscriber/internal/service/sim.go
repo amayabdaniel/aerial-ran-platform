@@ -142,13 +142,17 @@ func (s *SIM) ListByOrg(ctx context.Context, orgID string) ([]*model.SIM, error)
 }
 
 // Suspend marks the SIM suspended and removes it from Open5GS so it cannot attach.
+// If the 5G-core removal fails, the status is NOT changed and the error is
+// surfaced — otherwise we'd report a suspended line that can still attach.
 func (s *SIM) Suspend(ctx context.Context, id string) error {
 	sim, err := s.repo.GetByID(ctx, id)
 	if err != nil {
 		return err
 	}
 	if s.open5gs != nil {
-		_ = s.open5gs.Delete(ctx, sim.IMSI)
+		if err := s.open5gs.Delete(ctx, sim.IMSI); err != nil {
+			return errors.Join(model.ErrDeprovisioning, err)
+		}
 	}
 	return s.repo.UpdateStatus(ctx, id, "suspended")
 }
@@ -171,13 +175,17 @@ func (s *SIM) Resume(ctx context.Context, id string) error {
 }
 
 // Terminate removes the SIM from Open5GS and marks it terminated (record retained).
+// Like Suspend, a failed 5G-core removal is surfaced rather than reporting a
+// terminated line the UE can still attach with.
 func (s *SIM) Terminate(ctx context.Context, id string) error {
 	sim, err := s.repo.GetByID(ctx, id)
 	if err != nil {
 		return err
 	}
 	if s.open5gs != nil {
-		_ = s.open5gs.Delete(ctx, sim.IMSI)
+		if err := s.open5gs.Delete(ctx, sim.IMSI); err != nil {
+			return errors.Join(model.ErrDeprovisioning, err)
+		}
 	}
 	return s.repo.UpdateStatus(ctx, id, "terminated")
 }

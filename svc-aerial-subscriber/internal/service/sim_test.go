@@ -56,17 +56,22 @@ func (f *fakeRepo) UpdateStatus(_ context.Context, id, status string) error {
 	return nil
 }
 
-// fakeProv is a Provisioner whose Upsert returns upsertErr.
+// fakeProv is a Provisioner whose Upsert/Delete return preset errors.
 type fakeProv struct {
 	upsertErr error
+	deleteErr error
 	upserts   int
+	deletes   int
 }
 
 func (p *fakeProv) Upsert(context.Context, open5gs.Subscriber) error {
 	p.upserts++
 	return p.upsertErr
 }
-func (p *fakeProv) Delete(context.Context, string) error { return nil }
+func (p *fakeProv) Delete(context.Context, string) error {
+	p.deletes++
+	return p.deleteErr
+}
 
 func newSvc(repo Repo, prov Provisioner) *SIM {
 	return &SIM{repo: repo, open5gs: prov, plmnMcc: "999", plmnMnc: "70"}
@@ -130,5 +135,58 @@ func TestCreateRejectsEmptyOrg(t *testing.T) {
 	svc := newSvc(newFakeRepo(), &fakeProv{})
 	if _, err := svc.Create(context.Background(), "  ", model.CreateSIMRequest{}); !errors.Is(err, model.ErrBadInput) {
 		t.Fatalf("want ErrBadInput for empty org, got %v", err)
+	}
+}
+
+// seedSIM inserts a SIM directly so Suspend/Terminate have a row to act on.
+func seedSIM(repo *fakeRepo, id, imsi string) {
+	repo.sims[id] = &model.SIM{ID: id, IMSI: imsi, Status: "active"}
+}
+
+// The bug: a failed 5G-core removal must NOT report a suspended line the UE can
+// still attach with, and must NOT flip the stored status to "suspended".
+func TestSuspendSurfacesDeprovisioningFailure(t *testing.T) {
+	repo := newFakeRepo()
+	seedSIM(repo, "s1", "999700000000001")
+	prov := &fakeProv{deleteErr: errors.New("mongo unreachable")}
+	svc := newSvc(repo, prov)
+
+	err := svc.Suspend(context.Background(), "s1")
+	if err == nil {
+		t.Fatal("suspend must fail when the SIM can't be removed from the 5G core")
+	}
+	if !errors.Is(err, model.ErrDeprovisioning) {
+		t.Fatalf("want ErrDeprovisioning, got %v", err)
+	}
+	if repo.sims["s1"].Status == "suspended" {
+		t.Fatal("status must NOT be flipped to suspended when de-provisioning failed")
+	}
+}
+
+func TestSuspendSuccess(t *testing.T) {
+	repo := newFakeRepo()
+	seedSIM(repo, "s1", "999700000000001")
+	prov := &fakeProv{}
+	if err := newSvc(repo, prov).Suspend(context.Background(), "s1"); err != nil {
+		t.Fatalf("suspend: %v", err)
+	}
+	if prov.deletes != 1 {
+		t.Fatalf("expected 1 Open5GS delete, got %d", prov.deletes)
+	}
+	if repo.sims["s1"].Status != "suspended" {
+		t.Fatalf("status want suspended got %q", repo.sims["s1"].Status)
+	}
+}
+
+func TestTerminateSurfacesDeprovisioningFailure(t *testing.T) {
+	repo := newFakeRepo()
+	seedSIM(repo, "s2", "999700000000002")
+	prov := &fakeProv{deleteErr: errors.New("mongo unreachable")}
+	err := newSvc(repo, prov).Terminate(context.Background(), "s2")
+	if !errors.Is(err, model.ErrDeprovisioning) {
+		t.Fatalf("want ErrDeprovisioning, got %v", err)
+	}
+	if repo.sims["s2"].Status == "terminated" {
+		t.Fatal("status must NOT be flipped to terminated when de-provisioning failed")
 	}
 }
