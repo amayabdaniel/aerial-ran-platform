@@ -24,6 +24,9 @@ type Status struct {
 	PLMN             string            `json:"plmn"`
 	NFs              map[string]NFInfo `json:"nfs"`
 	Subscribers      int64             `json:"subscribers"`
+	// SubscribersError is set when the subscriber count could not be read, so a
+	// caller can tell "0 subscribers" apart from "the count query failed".
+	SubscribersError string            `json:"subscribers_error,omitempty"`
 	OpenSessions     int64             `json:"open_sessions,omitempty"`
 	ScrapeDurationMS int64             `json:"scrape_duration_ms"`
 }
@@ -35,13 +38,27 @@ type NFInfo struct {
 	Error     string `json:"error,omitempty"`
 }
 
+// subscriberCounter reads the number of provisioned subscribers from the 5G
+// core. Abstracted so Status's error handling is testable without a live Mongo.
+type subscriberCounter interface {
+	Count(ctx context.Context) (int64, error)
+}
+
+// mongoCounter is the production subscriberCounter over Open5GS's MongoDB.
+type mongoCounter struct{ coll *mongo.Collection }
+
+func (m *mongoCounter) Count(ctx context.Context) (int64, error) {
+	return m.coll.CountDocuments(ctx, bson.M{})
+}
+
 // Service holds dependencies.
 type Service struct {
-	http       *http.Client
-	mongo      *mongo.Client
-	mongoDB    string
+	http        *http.Client
+	mongo       *mongo.Client
+	mongoDB     string
+	counter     subscriberCounter // nil when no 5G core reachable
 	nfEndpoints map[string]string // name → http://host:port/metrics
-	plmn       string
+	plmn        string
 }
 
 // New wires the service. nfEndpoints is e.g. {"amf":"http://open5gs-amf:9090/metrics", ...}.
@@ -62,6 +79,7 @@ func New(ctx context.Context, mongoURI, mongoDB, plmn string, nfEndpoints map[st
 		defer cancel()
 		if pingErr := cli.Ping(pctx, nil); pingErr == nil {
 			s.mongo = cli
+			s.counter = &mongoCounter{coll: cli.Database(mongoDB).Collection("subscribers")}
 		}
 	}
 	return s, nil
@@ -90,9 +108,13 @@ func (s *Service) Status(ctx context.Context) (*Status, error) {
 		st.NFs[name] = info
 	}
 
-	if s.mongo != nil {
-		n, err := s.mongo.Database(s.mongoDB).Collection("subscribers").CountDocuments(ctx, bson.M{})
-		if err == nil {
+	if s.counter != nil {
+		n, err := s.counter.Count(ctx)
+		if err != nil {
+			// Don't silently report 0 — that reads as "no SIMs" when the query
+			// actually failed. Surface it like the per-NF errors above.
+			st.SubscribersError = err.Error()
+		} else {
 			st.Subscribers = n
 		}
 	}
