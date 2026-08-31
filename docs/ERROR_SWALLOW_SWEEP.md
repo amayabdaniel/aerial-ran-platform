@@ -17,17 +17,17 @@ rediscovered.
 | 1 | `svc-aerial-billing/internal/billing/billing.go` MyMonth | any DB error → zero rollup | every user reads `$0.00` during an outage | actionable (billing) | a47a615 |
 | 2 | `svc-aerial-subscriber/internal/service/sim.go` Create | Open5GS `Upsert` error dropped | 201 with an "active" SIM a UE can't attach with | actionable (provisioning) | 78193be |
 | 3 | `svc-aerial-ran-control/internal/ranctl/ranctl.go` Status | `CountDocuments` error → 0 | `subscribers: 0` reads as an empty network | actionable (operational) | 18437aa |
-| 4 | `svc-aerial-subscriber/internal/service/sim.go` Suspend & Terminate | `open5gs.Delete` error dropped | 204 "suspended"/"terminated" for a line the UE can still attach with | actionable (security + billing) | this commit |
+| 4 | `svc-aerial-subscriber/internal/service/sim.go` Suspend & Terminate | `open5gs.Delete` error dropped | 204 "suspended"/"terminated" for a line the UE can still attach with | actionable (security + billing) | d7ad500 |
+| 5 | `svc-aerial-iam/internal/service/iam.go` Refresh (reuse detection) | `RevokeFamily` error dropped | returns `ErrTokenReuse` ("family revoked") while the compromised family stays valid | actionable (security) | this commit |
 
 ## Reviewed — actionable, not yet fixed (follow-ups)
 
-- **`svc-aerial-iam/internal/service/iam.go:138`** — on refresh-token reuse
-  detection, `_ = s.repo.RevokeFamily(...)` is swallowed. If the revoke fails the
-  compromised family stays valid, though the presented token is still rejected.
-  Verdict: **actionable (security), narrow window** — requires an active reuse
-  attack AND a DB failure on the revoke one line after `FindRefreshToken`
-  succeeded on the same pool. Lower frequency than #1–#4; worth surfacing the
-  revoke error (deny + signal) in a follow-up.
+_None._ The last actionable item — iam Refresh reuse-detection swallowing
+`RevokeFamily` — is now fixed (#5): on a revoke failure the service fails closed
+and returns `ErrReuseRevokeFailed` (→ 500 `reuse_revoke_failed`) instead of a
+clean "reuse handled". The window is narrow (needs a live reuse attack plus a DB
+failure on the revoke), but a security control that fails silently is exactly the
+kind that should fail loud.
 
 ## Reviewed — not actionable (intentional / durable / inert)
 

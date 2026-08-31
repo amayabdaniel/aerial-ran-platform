@@ -110,6 +110,9 @@ func writeServiceErr(w http.ResponseWriter, err error) {
 		respond.Error(w, http.StatusUnauthorized, "unauthorized", err.Error())
 	case errors.Is(err, model.ErrInvalidArgument):
 		respond.Error(w, http.StatusBadRequest, "bad_request", err.Error())
+	case errors.Is(err, model.ErrReuseRevokeFailed):
+		// Reuse detected but the family revocation failed: deny + signal (fail closed).
+		respond.Error(w, http.StatusInternalServerError, "reuse_revoke_failed", err.Error())
 	default:
 		respond.DBError(w, err)
 	}

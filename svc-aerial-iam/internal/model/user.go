@@ -16,7 +16,12 @@ var (
 	ErrTokenRevoked    = errors.New("refresh token revoked")
 	ErrTokenExpired    = errors.New("refresh token expired")
 	ErrTokenReuse      = errors.New("refresh token reuse detected; family revoked")
-	ErrInvalidArgument = errors.New("invalid argument")
+	// ErrReuseRevokeFailed means reuse was detected but revoking the token
+	// family did not complete. The request is denied (fail closed), but the
+	// compromised family may still be valid — this must surface for retry/alert
+	// rather than be reported as a clean "reuse handled".
+	ErrReuseRevokeFailed = errors.New("refresh token reuse detected but family revocation failed")
+	ErrInvalidArgument   = errors.New("invalid argument")
 )
 
 // Role values mapped to JWT `role` claim.

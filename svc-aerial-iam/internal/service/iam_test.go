@@ -19,6 +19,7 @@ type fakeRepo struct {
 	usersByID map[string]*model.User
 	tokens map[string]*model.RefreshToken // hash → token
 	devSeq int
+	revokeFamilyErr error // when set, RevokeFamily fails (simulates a DB error)
 }
 
 func newFakeRepo() *fakeRepo {
@@ -91,6 +92,9 @@ func (f *fakeRepo) FindRefreshToken(_ context.Context, hash string) (*model.Refr
 	return rt, nil
 }
 func (f *fakeRepo) RevokeFamily(_ context.Context, familyID string) error {
+	if f.revokeFamilyErr != nil {
+		return f.revokeFamilyErr
+	}
 	now := time.Now()
 	for _, t := range f.tokens {
 		if t.FamilyID == familyID && t.RevokedAt == nil {
@@ -204,6 +208,39 @@ func TestRefreshRotatesAndDetectsReuse(t *testing.T) {
 	// After reuse detection the whole family is revoked: even the latest token fails.
 	if _, err := svc.Refresh(context.Background(), tp2.RefreshToken, ""); err == nil {
 		t.Fatal("after reuse detection the rotated token should also be revoked")
+	}
+}
+
+// When reuse is detected but the family revocation fails, the service must NOT
+// report a clean ErrTokenReuse (which claims "family revoked") — it must surface
+// the failure so the un-revoked, possibly-compromised family is not hidden.
+func TestRefreshReuseSurfacesRevokeFailure(t *testing.T) {
+	repo := newFakeRepo()
+	svc := newSvc(repo)
+	_, _ = svc.Signup(context.Background(), model.SignupRequest{Email: "u@home.local", Password: "correctpassword"})
+	tp, _ := svc.Login(context.Background(), model.LoginRequest{Email: "u@home.local", Password: "correctpassword"})
+
+	// Rotate once so the original token becomes revoked (a replay = reuse).
+	if _, err := svc.Refresh(context.Background(), tp.RefreshToken, ""); err != nil {
+		t.Fatalf("first refresh: %v", err)
+	}
+
+	// Now make the family-revocation write fail, then replay the old token.
+	dbErr := errors.New("revoke update: connection reset")
+	repo.revokeFamilyErr = dbErr
+
+	_, err := svc.Refresh(context.Background(), tp.RefreshToken, "")
+	if err == nil {
+		t.Fatal("reuse with a failed family revocation must return an error, not succeed")
+	}
+	if !errors.Is(err, model.ErrReuseRevokeFailed) {
+		t.Fatalf("want ErrReuseRevokeFailed, got %v", err)
+	}
+	if errors.Is(err, model.ErrTokenReuse) {
+		t.Fatal("must NOT report ErrTokenReuse (claims family revoked) when revocation failed")
+	}
+	if !errors.Is(err, dbErr) {
+		t.Fatalf("underlying cause should be wrapped, got %v", err)
 	}
 }
 

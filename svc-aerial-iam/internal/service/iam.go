@@ -135,7 +135,12 @@ func (s *IAM) Refresh(ctx context.Context, raw, deviceFingerprint string) (*mode
 	if errors.Is(err, model.ErrTokenRevoked) {
 		// reuse detection: revoke the entire family
 		if rt != nil {
-			_ = s.repo.RevokeFamily(ctx, rt.FamilyID)
+			if rerr := s.repo.RevokeFamily(ctx, rt.FamilyID); rerr != nil {
+				// The security response failed to complete. Fail closed and
+				// surface it — reporting a clean "reuse handled" would hide an
+				// un-revoked, potentially compromised token family.
+				return nil, errors.Join(model.ErrReuseRevokeFailed, rerr)
+			}
 		}
 		return nil, model.ErrTokenReuse
 	}
