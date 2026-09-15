@@ -25,6 +25,12 @@ const (
 	streamName  = "AERIAL_MESSAGES"
 )
 
+// ErrInvalidMessage is a client-input error (missing recipient or body). It is
+// distinct from a database/transport fault so the handler can answer 400, not
+// 500 — a malformed request is the caller's fault, and reporting it as a server
+// error tells operators to chase a fault that does not exist.
+var ErrInvalidMessage = errors.New("to_user_id and body required")
+
 type Message struct {
 	ID        string    `json:"id"`
 	OrgID     string    `json:"org_id"`
@@ -70,7 +76,7 @@ func New(ctx context.Context, pool *pgxpool.Pool, natsURL string) (*Service, err
 // Send persists + publishes.
 func (s *Service) Send(ctx context.Context, orgID, fromUser string, req SendRequest) (*Message, error) {
 	if req.ToUserID == "" || req.Body == "" {
-		return nil, errors.New("to_user_id and body required")
+		return nil, ErrInvalidMessage
 	}
 	m := &Message{OrgID: orgID, FromUser: fromUser, ToUser: req.ToUserID, Body: req.Body}
 	err := s.pool.QueryRow(ctx,
@@ -134,6 +140,10 @@ func (h *Handler) send(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	m, err := h.svc.Send(r.Context(), claims.OrgID, claims.UserID, req)
+	if errors.Is(err, ErrInvalidMessage) {
+		respond.Error(w, http.StatusBadRequest, "bad_request", err.Error())
+		return
+	}
 	if err != nil {
 		respond.DBError(w, err)
 		return
