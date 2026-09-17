@@ -3,9 +3,12 @@ package respond
 import (
 	"context"
 	"encoding/json"
+	"fmt"
 	"net/http"
 	"net/http/httptest"
 	"testing"
+
+	"github.com/jackc/pgx/v5/pgconn"
 )
 
 func TestJSONWritesStatusAndBody(t *testing.T) {
@@ -48,6 +51,15 @@ func TestDBErrorMapping(t *testing.T) {
 		{"deadline", context.DeadlineExceeded, http.StatusGatewayTimeout},
 		{"canceled", context.Canceled, 499},
 		{"other", errString("boom"), http.StatusInternalServerError},
+		// A malformed value the DB could not parse (e.g. a non-UUID id cast via
+		// $n::uuid) is the caller's mistake, not a server fault: 400, not 500.
+		{"pg_invalid_text", &pgconn.PgError{Code: "22P02", Message: `invalid input syntax for type uuid: "not-a-uuid"`}, http.StatusBadRequest},
+		// ...even when wrapped by the repository layer (errors.As must unwrap).
+		{"pg_invalid_text_wrapped", fmt.Errorf("cancel subscription: %w", &pgconn.PgError{Code: "22P02"}), http.StatusBadRequest},
+		// Integrity violations are NOT blanket-mapped here — a unique violation's
+		// right code is resource-specific (409) and stays with the handler; the
+		// shared sink must not swallow it into a 400.
+		{"pg_unique_violation_stays_500", &pgconn.PgError{Code: "23505"}, http.StatusInternalServerError},
 	}
 	for _, c := range cases {
 		t.Run(c.name, func(t *testing.T) {
