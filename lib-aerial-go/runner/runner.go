@@ -77,6 +77,7 @@ func Run(opts Opts) {
 		corsMW(opts.CORSOrigins),
 		httplog.Middleware(logger),
 		authMW,
+		bodyLimitMW(DefaultMaxBodyBytes),
 	)(mux)
 
 	srv := &http.Server{
@@ -101,6 +102,26 @@ func Run(opts Opts) {
 	shCtx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
 	defer cancel()
 	_ = srv.Shutdown(shCtx)
+}
+
+// DefaultMaxBodyBytes caps a request body so a single connection cannot force
+// the service to buffer/parse an unbounded payload (a cheap memory-exhaustion
+// DoS). Every JSON handler decodes r.Body; without this cap json.Decode would
+// read as much as the client sends. 4 MiB is generous for these control-plane
+// APIs. On overflow the wrapped body read errors, which handlers surface as 400.
+const DefaultMaxBodyBytes int64 = 4 << 20 // 4 MiB
+
+// bodyLimitMW wraps r.Body in an http.MaxBytesReader so reads past max fail
+// instead of allocating without bound.
+func bodyLimitMW(max int64) func(http.Handler) http.Handler {
+	return func(next http.Handler) http.Handler {
+		return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+			if r.Body != nil {
+				r.Body = http.MaxBytesReader(w, r.Body, max)
+			}
+			next.ServeHTTP(w, r)
+		})
+	}
 }
 
 func chain(mws ...func(http.Handler) http.Handler) func(http.Handler) http.Handler {
