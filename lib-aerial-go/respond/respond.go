@@ -7,6 +7,7 @@ import (
 	"context"
 	"encoding/json"
 	"errors"
+	"log/slog"
 	"net/http"
 	"sync"
 
@@ -59,6 +60,11 @@ func DBError(w http.ResponseWriter, err error) {
 		// and belongs in the handler, not this shared sink.
 		Error(w, http.StatusBadRequest, "bad_request", "malformed value in request")
 	default:
-		Error(w, http.StatusInternalServerError, "internal", err.Error())
+		// Do NOT echo the raw driver/internal error to the client: a Postgres
+		// error text leaks schema (table/column/constraint names), SQL fragments
+		// and sometimes host detail, and other wrapped errors leak internal
+		// paths. Log it server-side for diagnosis and return a generic message.
+		slog.Error("unhandled server error", "err", err.Error())
+		Error(w, http.StatusInternalServerError, "internal", "internal server error")
 	}
 }

@@ -6,6 +6,7 @@ import (
 	"fmt"
 	"net/http"
 	"net/http/httptest"
+	"strings"
 	"testing"
 
 	"github.com/jackc/pgx/v5/pgconn"
@@ -69,6 +70,23 @@ func TestDBErrorMapping(t *testing.T) {
 				t.Fatalf("%s: want %d got %d", c.name, c.want, rec.Code)
 			}
 		})
+	}
+}
+
+// A 500 must not leak internal error detail (schema names, SQL, driver text) to
+// the client — that is reconnaissance for an attacker. The body message must be
+// generic even though the underlying error names a table.
+func TestDBErrorDoesNotLeakInternalDetail(t *testing.T) {
+	rec := httptest.NewRecorder()
+	leaky := errString(`ERROR: relation "iam.refresh_tokens" does not exist (SQLSTATE 42P01)`)
+	DBError(rec, leaky)
+	if rec.Code != http.StatusInternalServerError {
+		t.Fatalf("want 500 got %d", rec.Code)
+	}
+	var out map[string]string
+	_ = json.Unmarshal(rec.Body.Bytes(), &out)
+	if strings.Contains(out["message"], "refresh_tokens") || strings.Contains(out["message"], "SQLSTATE") || strings.Contains(out["message"], "relation") {
+		t.Fatalf("500 body leaked internal error detail: %q", out["message"])
 	}
 }
 
