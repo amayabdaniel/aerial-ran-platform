@@ -5,13 +5,46 @@ control plane (7 Go services + `lib-aerial-go`, Postgres/pgx, NATS, Open5GS
 Mongo, k3d/k8s). Each vector carries an exposure verdict; fixed items cite the
 commit, deliberately-unfixed items say why. Companion to `HARDENING_LOG.md`.
 
+## ⚠ Most severe finding — a published JWT signing key that a default deployment actually uses
+
+This is not "a weak default waiting for a missing env var." The HS256 signing key
+`dev-secret-change-in-production-32ch` is **public in this repository and a
+cluster deployed from it as-is runs on that key by default**:
+
+- `infra/k8s/platform/00-infra.yaml:15` ships the literal as the **actual value**
+  of the `aerial-secrets` Secret's `JWT_SECRET` key.
+- `infra/k8s/platform/20-services.yaml` wires every service's `JWT_SECRET` via
+  `secretKeyRef: {name: aerial-secrets, key: JWT_SECRET}` — so the reference
+  **resolves to the committed key**; nothing is unset, nothing fails closed.
+- All **7 services** additionally hardcode the same string as their in-code
+  fallback (billing, esim, iam, messaging, provision, ran-control, subscriber),
+  and validation only checks `len >= 16` — the string is exactly 32 chars, so it
+  passes. 11 tracked files at HEAD contain the literal.
+
+**Consequence, stated plainly: any token forged with this public string is
+accepted today, on every authenticated endpoint, for any `org` and any `role`.**
+An attacker who has read the repo can mint an admin token for any tenant. There
+is no exploitation precondition beyond reachability.
+
+Correct fix (not shipped this pass — it spans code + ops + manifests and cannot be
+validated without a running deployment; half-wiring a fail-closed guard across 7
+services would break dev boot, which is worse than the documented state):
+1. **Rotate the key out of git** into a real secret store; treat the current value
+   as compromised.
+2. Add `jwt.CheckSecret` rejecting empty / `< 32` / the known-placeholder value
+   unless `ALLOW_INSECURE_JWT_SECRET=true`, wired into **every** entrypoint
+   (`runner.Run` + the iam/subscriber/esim custom mains).
+3. Set the dev opt-in in the committed dev manifests so `make up`/k8s still boot.
+
+Escalated to Daniel as the most severe single finding of this pass.
+
 ## Summary
 
 | # | Vector | Verdict | Action |
 |---|--------|---------|--------|
 | 1 | AuthN/AuthZ | **EXPOSED** | **FIXED** `880b94c` — cross-tenant IDOR closed |
 | 2 | Injection | not exposed | none needed (parameterized/constant) |
-| 3 | Transport & secrets | **EXPOSED** | documented; ops+cross-entrypoint change (below) |
+| 3 | Transport & secrets | **EXPOSED (critical)** | published JWT signing key — see top; ops+cross-entrypoint fix |
 | 4 | Input handling & DoS | **EXPOSED** | **FIXED** `09c657e` — 4 MiB body limit |
 | 5 | Supply chain | **EXPOSED** | **FIXED** `9726451` — x/text→v0.39.0; digest pinning documented |
 | 6 | Data exposure | **EXPOSED** | **FIXED** `67aab62` — DBError no longer leaks driver text |
@@ -41,20 +74,10 @@ handler, which escapes control chars, so log injection is not reachable.
 
 ## 3 — Transport & secrets — EXPOSED (documented, not patched this pass)
 
-- **Known public JWT HS256 secret** (`dev-secret-change-in-production-32ch`) is
-  the committed value in `infra/k8s/platform/00-infra.yaml` **and** the hardcoded
-  Go default; validation only checks `len >= 16`. A public signing key means
-  anyone can forge tokens for any `org`/`role`/`sub` on every authenticated
-  endpoint. **This is the most severe finding.** The correct fix is not a one-line
-  patch: rotate the secret out of git into a real secret store, AND add a
-  fail-closed guard (`jwt.CheckSecret` rejecting empty/short/known-placeholder
-  unless `ALLOW_INSECURE_JWT_SECRET=true`) wired into **every** entrypoint
-  (`runner.Run` + the iam/subscriber/esim custom mains), AND set the dev opt-in in
-  the committed dev manifests so `make up`/k8s still boot. That spans code + ops +
-  manifests and cannot be validated without a running deployment; a half-wired
-  guard that breaks dev boot is worse than the documented finding, so it is
-  flagged here rather than partially shipped. **Recommended next action, high
-  priority.**
+- **Published JWT signing key** — the most severe finding of the pass; see the
+  dedicated section at the top of this document for the 7-service + committed-
+  Secret breakdown and the fix. In short: a default deployment runs on a key that
+  is public in the repo, and any token forged with it is accepted today.
 - **Postgres password committed inline** in `00-infra.yaml` with `sslmode=disable`
   (plaintext DB traffic). Fix is ops: templated Secret + TLS. Cannot apply
   manifests in this pass.
