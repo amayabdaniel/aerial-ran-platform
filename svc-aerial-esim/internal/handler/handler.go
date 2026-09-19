@@ -81,7 +81,12 @@ func (h *H) list(w http.ResponseWriter, r *http.Request) {
 }
 
 func (h *H) get(w http.ResponseWriter, r *http.Request) {
-	e, err := h.svc.Get(r.Context(), r.PathValue("id"))
+	claims, ok := jwt.FromContext(r.Context())
+	if !ok {
+		respond.Error(w, http.StatusUnauthorized, "unauthorized", "no token")
+		return
+	}
+	e, err := h.svc.Get(r.Context(), claims.OrgID, r.PathValue("id"))
 	if err != nil {
 		writeServiceErr(w, err)
 		return
@@ -90,7 +95,12 @@ func (h *H) get(w http.ResponseWriter, r *http.Request) {
 }
 
 func (h *H) refreshUsage(w http.ResponseWriter, r *http.Request) {
-	e, err := h.svc.RefreshUsage(r.Context(), r.PathValue("id"))
+	claims, ok := jwt.FromContext(r.Context())
+	if !ok {
+		respond.Error(w, http.StatusUnauthorized, "unauthorized", "no token")
+		return
+	}
+	e, err := h.svc.RefreshUsage(r.Context(), claims.OrgID, r.PathValue("id"))
 	if err != nil {
 		writeServiceErr(w, err)
 		return
@@ -99,7 +109,12 @@ func (h *H) refreshUsage(w http.ResponseWriter, r *http.Request) {
 }
 
 func (h *H) activate(w http.ResponseWriter, r *http.Request) {
-	if err := h.svc.MarkActivated(r.Context(), r.PathValue("id")); err != nil {
+	claims, ok := jwt.FromContext(r.Context())
+	if !ok {
+		respond.Error(w, http.StatusUnauthorized, "unauthorized", "no token")
+		return
+	}
+	if err := h.svc.MarkActivated(r.Context(), claims.OrgID, r.PathValue("id")); err != nil {
 		writeServiceErr(w, err)
 		return
 	}
@@ -107,7 +122,12 @@ func (h *H) activate(w http.ResponseWriter, r *http.Request) {
 }
 
 func (h *H) cancel(w http.ResponseWriter, r *http.Request) {
-	if err := h.svc.Cancel(r.Context(), r.PathValue("id")); err != nil {
+	claims, ok := jwt.FromContext(r.Context())
+	if !ok {
+		respond.Error(w, http.StatusUnauthorized, "unauthorized", "no token")
+		return
+	}
+	if err := h.svc.Cancel(r.Context(), claims.OrgID, r.PathValue("id")); err != nil {
 		writeServiceErr(w, err)
 		return
 	}

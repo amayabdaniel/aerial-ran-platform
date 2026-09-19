@@ -126,10 +126,15 @@ func (s *Service) ListByOrg(ctx context.Context, orgID string) ([]Subscription, 
 	return out, rows.Err()
 }
 
-func (s *Service) Cancel(ctx context.Context, id string) error {
+// Cancel cancels a subscription the caller's org owns. Scoping the UPDATE by
+// org_id closes a cross-tenant IDOR: without it any authenticated user could
+// cancel any subscription by guessing/knowing its id. A row in another org
+// matches nothing, so RowsAffected()==0 → ErrSubNotFound (a 404 that does not
+// confirm the subscription exists under another tenant). Empty orgID fails closed.
+func (s *Service) Cancel(ctx context.Context, orgID, id string) error {
 	res, err := s.pool.Exec(ctx,
 		`UPDATE provision.subscriptions SET status='cancelled', cancelled_at=now(), updated_at=now()
-		   WHERE id=$1::uuid AND status<>'cancelled'`, id)
+		   WHERE id=$1::uuid AND org_id=$2::uuid AND status<>'cancelled'`, id, orgID)
 	if err != nil {
 		return err
 	}
@@ -212,7 +217,12 @@ func (h *Handler) listSubs(w http.ResponseWriter, r *http.Request) {
 }
 
 func (h *Handler) cancelSub(w http.ResponseWriter, r *http.Request) {
-	if err := h.svc.Cancel(r.Context(), r.PathValue("id")); err != nil {
+	claims, ok := jwt.FromContext(r.Context())
+	if !ok {
+		respond.Error(w, http.StatusUnauthorized, "unauthorized", "no token")
+		return
+	}
+	if err := h.svc.Cancel(r.Context(), claims.OrgID, r.PathValue("id")); err != nil {
 		if errors.Is(err, ErrSubNotFound) {
 			respond.Error(w, http.StatusNotFound, "not_found", err.Error())
 			return

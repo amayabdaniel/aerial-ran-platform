@@ -131,9 +131,26 @@ func (s *SIM) Create(ctx context.Context, orgID string, req model.CreateSIMReque
 	return s.repo.GetByID(ctx, created.ID)
 }
 
-// Get returns a SIM.
-func (s *SIM) Get(ctx context.Context, id string) (*model.SIM, error) {
-	return s.repo.GetByID(ctx, id)
+// Get returns a SIM the caller's org owns.
+func (s *SIM) Get(ctx context.Context, orgID, id string) (*model.SIM, error) {
+	return s.ownedByOrg(ctx, orgID, id)
+}
+
+// ownedByOrg fetches a SIM and enforces tenant ownership. A SIM belonging to a
+// different org is reported as ErrSIMNotFound rather than returned or acted on:
+// this closes the cross-tenant IDOR on the by-id endpoints (read another
+// tenant's IMSI/MSISDN, or suspend/terminate their line) and, by answering
+// not-found rather than forbidden, does not reveal that the id exists under
+// another tenant. An empty orgID matches no stored SIM, so it fails closed.
+func (s *SIM) ownedByOrg(ctx context.Context, orgID, id string) (*model.SIM, error) {
+	sim, err := s.repo.GetByID(ctx, id)
+	if err != nil {
+		return nil, err
+	}
+	if sim.OrgID != orgID {
+		return nil, model.ErrSIMNotFound
+	}
+	return sim, nil
 }
 
 // ListByOrg returns the org's SIMs.
@@ -144,8 +161,8 @@ func (s *SIM) ListByOrg(ctx context.Context, orgID string) ([]*model.SIM, error)
 // Suspend marks the SIM suspended and removes it from Open5GS so it cannot attach.
 // If the 5G-core removal fails, the status is NOT changed and the error is
 // surfaced — otherwise we'd report a suspended line that can still attach.
-func (s *SIM) Suspend(ctx context.Context, id string) error {
-	sim, err := s.repo.GetByID(ctx, id)
+func (s *SIM) Suspend(ctx context.Context, orgID, id string) error {
+	sim, err := s.ownedByOrg(ctx, orgID, id)
 	if err != nil {
 		return err
 	}
@@ -158,8 +175,8 @@ func (s *SIM) Suspend(ctx context.Context, id string) error {
 }
 
 // Resume re-provisions the SIM in Open5GS.
-func (s *SIM) Resume(ctx context.Context, id string) error {
-	sim, err := s.repo.GetByID(ctx, id)
+func (s *SIM) Resume(ctx context.Context, orgID, id string) error {
+	sim, err := s.ownedByOrg(ctx, orgID, id)
 	if err != nil {
 		return err
 	}
@@ -177,8 +194,8 @@ func (s *SIM) Resume(ctx context.Context, id string) error {
 // Terminate removes the SIM from Open5GS and marks it terminated (record retained).
 // Like Suspend, a failed 5G-core removal is surfaced rather than reporting a
 // terminated line the UE can still attach with.
-func (s *SIM) Terminate(ctx context.Context, id string) error {
-	sim, err := s.repo.GetByID(ctx, id)
+func (s *SIM) Terminate(ctx context.Context, orgID, id string) error {
+	sim, err := s.ownedByOrg(ctx, orgID, id)
 	if err != nil {
 		return err
 	}

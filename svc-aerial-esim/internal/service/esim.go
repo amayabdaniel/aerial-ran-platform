@@ -94,9 +94,25 @@ func (s *ESIM) Order(ctx context.Context, orgID string, req model.OrderRequest) 
 	return s.repo.CreateESIM(ctx, e)
 }
 
-// Get returns one eSIM.
-func (s *ESIM) Get(ctx context.Context, id string) (*model.ESIM, error) {
-	return s.repo.GetESIM(ctx, id)
+// Get returns one eSIM the caller's org owns.
+func (s *ESIM) Get(ctx context.Context, orgID, id string) (*model.ESIM, error) {
+	return s.ownedByOrg(ctx, orgID, id)
+}
+
+// ownedByOrg fetches an eSIM and enforces tenant ownership. An eSIM belonging to
+// a different org is reported as ErrESIMNotFound rather than returned or acted
+// on, closing the cross-tenant IDOR on the by-id endpoints (read another
+// tenant's ICCID/LPA/QR, or activate/cancel their eSIM). An empty orgID matches
+// no stored eSIM, so it fails closed.
+func (s *ESIM) ownedByOrg(ctx context.Context, orgID, id string) (*model.ESIM, error) {
+	e, err := s.repo.GetESIM(ctx, id)
+	if err != nil {
+		return nil, err
+	}
+	if e.OrgID != orgID {
+		return nil, model.ErrESIMNotFound
+	}
+	return e, nil
 }
 
 // ListByOrg returns the org's eSIMs.
@@ -105,8 +121,8 @@ func (s *ESIM) ListByOrg(ctx context.Context, orgID string) ([]*model.ESIM, erro
 }
 
 // RefreshUsage queries the provider and persists the latest usage_mb.
-func (s *ESIM) RefreshUsage(ctx context.Context, id string) (*model.ESIM, error) {
-	e, err := s.repo.GetESIM(ctx, id)
+func (s *ESIM) RefreshUsage(ctx context.Context, orgID, id string) (*model.ESIM, error) {
+	e, err := s.ownedByOrg(ctx, orgID, id)
 	if err != nil {
 		return nil, err
 	}
@@ -129,13 +145,16 @@ func (s *ESIM) RefreshUsage(ctx context.Context, id string) (*model.ESIM, error)
 }
 
 // MarkActivated flips status to active (called when the user reports the QR scanned).
-func (s *ESIM) MarkActivated(ctx context.Context, id string) error {
+func (s *ESIM) MarkActivated(ctx context.Context, orgID, id string) error {
+	if _, err := s.ownedByOrg(ctx, orgID, id); err != nil {
+		return err
+	}
 	return s.repo.SetStatus(ctx, id, "active")
 }
 
 // Cancel calls the provider Cancel + marks cancelled locally.
-func (s *ESIM) Cancel(ctx context.Context, id string) error {
-	e, err := s.repo.GetESIM(ctx, id)
+func (s *ESIM) Cancel(ctx context.Context, orgID, id string) error {
+	e, err := s.ownedByOrg(ctx, orgID, id)
 	if err != nil {
 		return err
 	}

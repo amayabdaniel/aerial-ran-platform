@@ -138,9 +138,42 @@ func TestCreateRejectsEmptyOrg(t *testing.T) {
 	}
 }
 
-// seedSIM inserts a SIM directly so Suspend/Terminate have a row to act on.
+// seedSIM inserts a SIM (owned by "org-1") so Suspend/Terminate have a row to
+// act on.
 func seedSIM(repo *fakeRepo, id, imsi string) {
-	repo.sims[id] = &model.SIM{ID: id, IMSI: imsi, Status: "active"}
+	repo.sims[id] = &model.SIM{ID: id, OrgID: "org-1", IMSI: imsi, Status: "active"}
+}
+
+// SECURITY (IDOR): the by-id endpoints must not let one tenant read or act on
+// another tenant's SIM. A SIM owned by org-1, addressed with a different org's
+// identity, must come back ErrSIMNotFound — not returned, and not
+// suspended/resumed/terminated — and the victim SIM must be left untouched.
+func TestByIDEndpointsEnforceTenantOwnership(t *testing.T) {
+	repo := newFakeRepo()
+	seedSIM(repo, "s1", "999700000000001") // owned by org-1
+	svc := newSvc(repo, &fakeProv{})
+	const attacker = "org-2"
+
+	if _, err := svc.Get(context.Background(), attacker, "s1"); !errors.Is(err, model.ErrSIMNotFound) {
+		t.Fatalf("Get across tenants must be ErrSIMNotFound (IDOR), got %v", err)
+	}
+	if err := svc.Suspend(context.Background(), attacker, "s1"); !errors.Is(err, model.ErrSIMNotFound) {
+		t.Fatalf("Suspend across tenants must be ErrSIMNotFound (IDOR), got %v", err)
+	}
+	if err := svc.Resume(context.Background(), attacker, "s1"); !errors.Is(err, model.ErrSIMNotFound) {
+		t.Fatalf("Resume across tenants must be ErrSIMNotFound (IDOR), got %v", err)
+	}
+	if err := svc.Terminate(context.Background(), attacker, "s1"); !errors.Is(err, model.ErrSIMNotFound) {
+		t.Fatalf("Terminate across tenants must be ErrSIMNotFound (IDOR), got %v", err)
+	}
+	// No cross-tenant op may have mutated the victim SIM.
+	if repo.sims["s1"].Status != "active" {
+		t.Fatalf("cross-tenant op mutated the victim SIM: status=%q", repo.sims["s1"].Status)
+	}
+	// The legitimate owner still works.
+	if _, err := svc.Get(context.Background(), "org-1", "s1"); err != nil {
+		t.Fatalf("legitimate owner Get must succeed, got %v", err)
+	}
 }
 
 // The bug: a failed 5G-core removal must NOT report a suspended line the UE can
@@ -151,7 +184,7 @@ func TestSuspendSurfacesDeprovisioningFailure(t *testing.T) {
 	prov := &fakeProv{deleteErr: errors.New("mongo unreachable")}
 	svc := newSvc(repo, prov)
 
-	err := svc.Suspend(context.Background(), "s1")
+	err := svc.Suspend(context.Background(), "org-1", "s1")
 	if err == nil {
 		t.Fatal("suspend must fail when the SIM can't be removed from the 5G core")
 	}
@@ -167,7 +200,7 @@ func TestSuspendSuccess(t *testing.T) {
 	repo := newFakeRepo()
 	seedSIM(repo, "s1", "999700000000001")
 	prov := &fakeProv{}
-	if err := newSvc(repo, prov).Suspend(context.Background(), "s1"); err != nil {
+	if err := newSvc(repo, prov).Suspend(context.Background(), "org-1", "s1"); err != nil {
 		t.Fatalf("suspend: %v", err)
 	}
 	if prov.deletes != 1 {
@@ -182,7 +215,7 @@ func TestTerminateSurfacesDeprovisioningFailure(t *testing.T) {
 	repo := newFakeRepo()
 	seedSIM(repo, "s2", "999700000000002")
 	prov := &fakeProv{deleteErr: errors.New("mongo unreachable")}
-	err := newSvc(repo, prov).Terminate(context.Background(), "s2")
+	err := newSvc(repo, prov).Terminate(context.Background(), "org-1", "s2")
 	if !errors.Is(err, model.ErrDeprovisioning) {
 		t.Fatalf("want ErrDeprovisioning, got %v", err)
 	}
