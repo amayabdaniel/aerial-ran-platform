@@ -38,6 +38,31 @@ services would break dev boot, which is worse than the documented state):
 
 Escalated to Daniel as the most severe single finding of this pass.
 
+## Companion finding — committed Postgres credential (same class, in-cluster reach)
+
+The database password is the **same class** as the JWT secret — a committed
+credential a default deployment actually uses, not a dev fallback a real deploy
+overrides:
+
+- `00-infra.yaml:14` ships `aerial_dev_pass_change_me` as the actual value of
+  `aerial-secrets`'s `POSTGRES_PASSWORD`, and **the Postgres container is
+  initialised with it** (`secretKeyRef` at `00-infra.yaml:101`) — so the DB is
+  *created* with this password.
+- All 7 per-service DSNs embed it inline as the `DATABASE_URL_*` Secret values
+  (`00-infra.yaml:17-23`), and `20-services.yaml` resolves each service's
+  `DATABASE_URL` from those keys — a default deploy connects with the committed
+  password. 12 tracked files contain it at HEAD.
+
+**Severity: high, one notch below the JWT secret — the distinction is reach, and
+it is real, not a downgrade of the class.** Postgres is a `ClusterIP` service
+(not externally exposed), so using the credential directly needs in-cluster
+network access, whereas the JWT key is exploitable through the public gateway on
+any authenticated endpoint. Compounding factor: every DSN sets `sslmode=disable`,
+so the password and all DB traffic are plaintext on the pod network — any
+in-cluster sniffer sees the credential regardless. Same remediation shape as the
+JWT secret (rotate out of git as compromised → real secret store; enable TLS),
+and it is documented here rather than rotated in this pass for the same reason.
+
 ## Summary
 
 | # | Vector | Verdict | Action |
@@ -78,9 +103,10 @@ handler, which escapes control chars, so log injection is not reachable.
   dedicated section at the top of this document for the 7-service + committed-
   Secret breakdown and the fix. In short: a default deployment runs on a key that
   is public in the repo, and any token forged with it is accepted today.
-- **Postgres password committed inline** in `00-infra.yaml` with `sslmode=disable`
-  (plaintext DB traffic). Fix is ops: templated Secret + TLS. Cannot apply
-  manifests in this pass.
+- **Committed Postgres credential** — same class as the JWT secret (committed and
+  actually used by a default deploy), high severity, in-cluster reach. See the
+  dedicated companion section near the top for the breakdown; `sslmode=disable`
+  makes the credential and all DB traffic plaintext on the pod network.
 - **WebSocket CSWSH**: `svc-aerial-messaging` sets `InsecureSkipVerify: true` on
   `websocket.Accept`, disabling Origin checking (cross-site WebSocket hijack if
   the service is reached directly, bypassing the gateway). Fix: drop the flag
