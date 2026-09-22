@@ -229,6 +229,17 @@ aerial-ran-platform/
 
 See §7 of the research doc.
 
+## CI
+
+A GitHub Actions workflow lives at `.github/workflows/ci.yml` in the working tree
+— build + `go vet` + unit tests with the race detector, `govulncheck`, and an
+integration job — but **the `.github/` directory is intentionally not committed**,
+to conserve limited Actions minutes. It is therefore absent from a fresh clone by
+design; this is a deliberate hold, not a missing pipeline. To enable CI, `git add
+.github/workflows/ci.yml` and push it to a fork or branch where you have Actions
+budget. The same checks run locally with `make test-unit` and
+`make test-integration`.
+
 ## License
 
 TBD (planned: AGPL-3.0 for services, Apache-2.0 for `lib-aerial-go`).
