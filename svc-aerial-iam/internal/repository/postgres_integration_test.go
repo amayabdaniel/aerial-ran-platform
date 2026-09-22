@@ -12,8 +12,8 @@ import (
 	"time"
 
 	"github.com/amayabdaniel/aerial-ran-platform/svc-aerial-iam/internal/model"
-	"github.com/jackc/pgx/v5/pgxpool"
 	"github.com/google/uuid"
+	"github.com/jackc/pgx/v5/pgxpool"
 	"github.com/testcontainers/testcontainers-go"
 	"github.com/testcontainers/testcontainers-go/modules/postgres"
 	"github.com/testcontainers/testcontainers-go/wait"

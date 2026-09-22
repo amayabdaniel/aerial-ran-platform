@@ -14,11 +14,11 @@ import (
 
 // fakeRepo is an in-memory Repo for unit tests.
 type fakeRepo struct {
-	orgs   map[string]*model.Organization // slug → org
-	users  map[string]*model.User         // email → user
-	usersByID map[string]*model.User
-	tokens map[string]*model.RefreshToken // hash → token
-	devSeq int
+	orgs            map[string]*model.Organization // slug → org
+	users           map[string]*model.User         // email → user
+	usersByID       map[string]*model.User
+	tokens          map[string]*model.RefreshToken // hash → token
+	devSeq          int
 	revokeFamilyErr error // when set, RevokeFamily fails (simulates a DB error)
 }
 

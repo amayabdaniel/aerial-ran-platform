@@ -19,9 +19,9 @@ import (
 // ───────── model ─────────
 
 var (
-	ErrPlanNotFound     = errors.New("plan not found")
-	ErrSubNotFound      = errors.New("subscription not found")
-	ErrSubExists        = errors.New("subscription already exists for user+plan")
+	ErrPlanNotFound = errors.New("plan not found")
+	ErrSubNotFound  = errors.New("subscription not found")
+	ErrSubExists    = errors.New("subscription already exists for user+plan")
 )
 
 type Plan struct {

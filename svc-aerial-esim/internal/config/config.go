@@ -7,17 +7,17 @@ import (
 )
 
 type Config struct {
-	Port              string
-	DatabaseURL       string
-	JWTSecret         string
-	JWTIssuer         string
-	JWTAudience       string
-	OTelEndpoint      string
-	CORSOrigins       string
+	Port         string
+	DatabaseURL  string
+	JWTSecret    string
+	JWTIssuer    string
+	JWTAudience  string
+	OTelEndpoint string
+	CORSOrigins  string
 
 	// Provider selection — "mock" when keys are empty, otherwise "airalo".
-	AiraloBaseURL     string
-	AiraloClientID    string
+	AiraloBaseURL      string
+	AiraloClientID     string
 	AiraloClientSecret string
 }
 

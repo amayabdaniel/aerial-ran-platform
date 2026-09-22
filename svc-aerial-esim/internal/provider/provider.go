@@ -22,9 +22,9 @@ type PackageOffering struct {
 type OrderResult struct {
 	ProviderRef string
 	ICCID       string
-	LPAString   string     // LPA:1$smdp-host$matchingId  → goes into a QR
-	QRPNGBase64 string     // optional: pre-rendered PNG; otherwise UI renders LPA
-	InstallURL  string     // iOS 17.4+ Universal Link
+	LPAString   string // LPA:1$smdp-host$matchingId  → goes into a QR
+	QRPNGBase64 string // optional: pre-rendered PNG; otherwise UI renders LPA
+	InstallURL  string // iOS 17.4+ Universal Link
 	ExpiresAt   *time.Time
 }
 

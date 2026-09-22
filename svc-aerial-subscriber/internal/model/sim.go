@@ -30,8 +30,8 @@ type SIM struct {
 	MSISDN        *string    `json:"msisdn,omitempty"`
 	PLMNMcc       string     `json:"plmn_mcc"`
 	PLMNMnc       string     `json:"plmn_mnc"`
-	Ki            string     `json:"-"`          // never sent to clients in v1
-	OPc           string     `json:"-"`          // never sent to clients in v1
+	Ki            string     `json:"-"` // never sent to clients in v1
+	OPc           string     `json:"-"` // never sent to clients in v1
 	AMF           string     `json:"amf"`
 	APN           string     `json:"apn"`
 	SST           int16      `json:"sst"`

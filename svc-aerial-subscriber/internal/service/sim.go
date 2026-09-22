@@ -34,10 +34,10 @@ type Provisioner interface {
 
 // SIM is the service.
 type SIM struct {
-	repo     Repo
-	open5gs  Provisioner
-	plmnMcc  string
-	plmnMnc  string
+	repo    Repo
+	open5gs Provisioner
+	plmnMcc string
+	plmnMnc string
 }
 
 // New wires the service. A nil mongo client is stored as a nil Provisioner

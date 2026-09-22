@@ -27,25 +27,25 @@ type Package struct {
 
 // ESIM is an issued eSIM.
 type ESIM struct {
-	ID            string     `json:"id"`
-	OrgID         string     `json:"org_id"`
-	OwnerUserID   *string    `json:"owner_user_id,omitempty"`
-	Provider      string     `json:"provider"`
-	ProviderRef   *string    `json:"provider_ref,omitempty"`
-	ICCID         *string    `json:"iccid,omitempty"`
-	PackageID     *string    `json:"package_id,omitempty"`
-	PackageLabel  *string    `json:"package_label,omitempty"`
-	DataMB        *int       `json:"data_mb,omitempty"`
-	ValidityDays  *int       `json:"validity_days,omitempty"`
-	LPAString     *string    `json:"lpa_string,omitempty"`
-	QRPNGBase64   *string    `json:"qr_png_b64,omitempty"`
-	InstallURL    *string    `json:"install_url,omitempty"`
-	Status        string     `json:"status"`
-	ActivatedAt   *time.Time `json:"activated_at,omitempty"`
-	ExpiresAt     *time.Time `json:"expires_at,omitempty"`
-	LastUsageMB   int        `json:"last_usage_mb"`
-	CreatedAt     time.Time  `json:"created_at"`
-	UpdatedAt     time.Time  `json:"updated_at"`
+	ID           string     `json:"id"`
+	OrgID        string     `json:"org_id"`
+	OwnerUserID  *string    `json:"owner_user_id,omitempty"`
+	Provider     string     `json:"provider"`
+	ProviderRef  *string    `json:"provider_ref,omitempty"`
+	ICCID        *string    `json:"iccid,omitempty"`
+	PackageID    *string    `json:"package_id,omitempty"`
+	PackageLabel *string    `json:"package_label,omitempty"`
+	DataMB       *int       `json:"data_mb,omitempty"`
+	ValidityDays *int       `json:"validity_days,omitempty"`
+	LPAString    *string    `json:"lpa_string,omitempty"`
+	QRPNGBase64  *string    `json:"qr_png_b64,omitempty"`
+	InstallURL   *string    `json:"install_url,omitempty"`
+	Status       string     `json:"status"`
+	ActivatedAt  *time.Time `json:"activated_at,omitempty"`
+	ExpiresAt    *time.Time `json:"expires_at,omitempty"`
+	LastUsageMB  int        `json:"last_usage_mb"`
+	CreatedAt    time.Time  `json:"created_at"`
+	UpdatedAt    time.Time  `json:"updated_at"`
 }
 
 // OrderRequest from the API.

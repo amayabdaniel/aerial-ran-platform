@@ -8,14 +8,14 @@ import (
 
 // Sentinel errors — handlers map these to HTTP codes.
 var (
-	ErrUserNotFound    = errors.New("user not found")
-	ErrUserExists      = errors.New("user already exists")
-	ErrOrgNotFound     = errors.New("org not found")
-	ErrBadCredentials  = errors.New("invalid email or password")
-	ErrTokenNotFound   = errors.New("refresh token not found")
-	ErrTokenRevoked    = errors.New("refresh token revoked")
-	ErrTokenExpired    = errors.New("refresh token expired")
-	ErrTokenReuse      = errors.New("refresh token reuse detected; family revoked")
+	ErrUserNotFound   = errors.New("user not found")
+	ErrUserExists     = errors.New("user already exists")
+	ErrOrgNotFound    = errors.New("org not found")
+	ErrBadCredentials = errors.New("invalid email or password")
+	ErrTokenNotFound  = errors.New("refresh token not found")
+	ErrTokenRevoked   = errors.New("refresh token revoked")
+	ErrTokenExpired   = errors.New("refresh token expired")
+	ErrTokenReuse     = errors.New("refresh token reuse detected; family revoked")
 	// ErrReuseRevokeFailed means reuse was detected but revoking the token
 	// family did not complete. The request is denied (fail closed), but the
 	// compromised family may still be valid — this must surface for retry/alert
@@ -65,14 +65,14 @@ type Device struct {
 
 // RefreshToken is stored hashed; the plaintext only lives in the response body.
 type RefreshToken struct {
-	ID         string     `json:"id"`
-	UserID     string     `json:"user_id"`
-	DeviceID   string     `json:"device_id"`
-	FamilyID   string     `json:"family_id"`
-	TokenHash  string     `json:"-"`
-	ExpiresAt  time.Time  `json:"expires_at"`
-	RevokedAt  *time.Time `json:"revoked_at,omitempty"`
-	CreatedAt  time.Time  `json:"created_at"`
+	ID        string     `json:"id"`
+	UserID    string     `json:"user_id"`
+	DeviceID  string     `json:"device_id"`
+	FamilyID  string     `json:"family_id"`
+	TokenHash string     `json:"-"`
+	ExpiresAt time.Time  `json:"expires_at"`
+	RevokedAt *time.Time `json:"revoked_at,omitempty"`
+	CreatedAt time.Time  `json:"created_at"`
 }
 
 // SignupRequest from the API.

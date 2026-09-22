@@ -1,11 +1,12 @@
 // Airalo Partners API adapter. See https://developers.partners.airalo.com/
 // Auth: client_credentials OAuth2 → access_token.
 // Endpoints used:
-//   POST /v2/token
-//   GET  /v2/packages?filter[type]=local&filter[country]=US
-//   POST /v2/orders
-//   GET  /v2/sims/{iccid}/usage
-//   PUT  /v2/orders/{order_id}/cancel
+//
+//	POST /v2/token
+//	GET  /v2/packages?filter[type]=local&filter[country]=US
+//	POST /v2/orders
+//	GET  /v2/sims/{iccid}/usage
+//	PUT  /v2/orders/{order_id}/cancel
 package provider
 
 import (
@@ -127,8 +128,8 @@ func (a *Airalo) Catalog(ctx context.Context, region string) ([]PackageOffering,
 	path := "/v2/packages?filter[type]=local&filter[country]=" + url.QueryEscape(region) + "&limit=20"
 	var resp struct {
 		Data []struct {
-			Slug     string `json:"slug"`
-			Country  struct {
+			Slug    string `json:"slug"`
+			Country struct {
 				Slug string `json:"slug"`
 			} `json:"country"`
 			OperatorPackages []struct {
@@ -164,18 +165,18 @@ func (a *Airalo) Catalog(ctx context.Context, region string) ([]PackageOffering,
 // Order creates an Airalo order for the given package, returns the issued eSIM's LPA.
 func (a *Airalo) Order(ctx context.Context, packageID, externalRef string) (*OrderResult, error) {
 	body := map[string]any{
-		"quantity":              1,
-		"package_id":            packageID,
-		"description":           externalRef,
+		"quantity":    1,
+		"package_id":  packageID,
+		"description": externalRef,
 	}
 	var resp struct {
 		Data struct {
 			ID   int `json:"id"`
 			Sims []struct {
-				ID                       int    `json:"id"`
-				ICCID                    string `json:"iccid"`
-				QRCode                   string `json:"qrcode"`
-				QRCodeURL                string `json:"qrcode_url"`
+				ID                         int    `json:"id"`
+				ICCID                      string `json:"iccid"`
+				QRCode                     string `json:"qrcode"`
+				QRCodeURL                  string `json:"qrcode_url"`
 				DirectAppleInstallationURL string `json:"direct_apple_installation_url"`
 			} `json:"sims"`
 		} `json:"data"`

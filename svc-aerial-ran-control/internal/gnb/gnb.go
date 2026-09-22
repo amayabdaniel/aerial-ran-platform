@@ -45,17 +45,17 @@ type Client struct {
 
 // CreateRequest is the API-facing shape; it maps to the GNodeB spec.
 type CreateRequest struct {
-	Name         string `json:"name"`
-	Image        string `json:"image,omitempty"`
-	GPUCount     int    `json:"gpu_count,omitempty"`
-	GPUType      string `json:"gpu_type,omitempty"`
-	EnableRDMA   bool   `json:"enable_rdma,omitempty"`
-	Bandwidth    int    `json:"bandwidth,omitempty"`   // MHz: 5..100
-	Numerology   int    `json:"numerology,omitempty"`  // 0..4
-	Band         string `json:"band,omitempty"`        // e.g. n78
-	MaxUEs       int    `json:"max_ues,omitempty"`
-	Fronthaul    string `json:"fronthaul_interface,omitempty"`
-	SecurityRef  string `json:"security_policy_ref,omitempty"`
+	Name        string `json:"name"`
+	Image       string `json:"image,omitempty"`
+	GPUCount    int    `json:"gpu_count,omitempty"`
+	GPUType     string `json:"gpu_type,omitempty"`
+	EnableRDMA  bool   `json:"enable_rdma,omitempty"`
+	Bandwidth   int    `json:"bandwidth,omitempty"`  // MHz: 5..100
+	Numerology  int    `json:"numerology,omitempty"` // 0..4
+	Band        string `json:"band,omitempty"`       // e.g. n78
+	MaxUEs      int    `json:"max_ues,omitempty"`
+	Fronthaul   string `json:"fronthaul_interface,omitempty"`
+	SecurityRef string `json:"security_policy_ref,omitempty"`
 }
 
 // GNodeB is a trimmed view returned to callers.
@@ -96,8 +96,18 @@ func (c *Client) Create(ctx context.Context, req CreateRequest) (*GNodeB, error)
 	if req.Name == "" {
 		return nil, fmt.Errorf("%w: name required", ErrInvalidRequest)
 	}
-	def := func(s, d string) string { if s == "" { return d }; return s }
-	defi := func(i, d int) int { if i == 0 { return d }; return i }
+	def := func(s, d string) string {
+		if s == "" {
+			return d
+		}
+		return s
+	}
+	defi := func(i, d int) int {
+		if i == 0 {
+			return d
+		}
+		return i
+	}
 
 	spec := map[string]any{
 		"image":    def(req.Image, "nvcr.io/nvidia/aerial/aerial-ran:24.3"),

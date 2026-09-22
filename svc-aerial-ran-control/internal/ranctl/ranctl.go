@@ -20,22 +20,22 @@ import (
 
 // Status is the response payload for GET /v1/ran/status.
 type Status struct {
-	Now              time.Time         `json:"now"`
-	PLMN             string            `json:"plmn"`
-	NFs              map[string]NFInfo `json:"nfs"`
-	Subscribers      int64             `json:"subscribers"`
+	Now         time.Time         `json:"now"`
+	PLMN        string            `json:"plmn"`
+	NFs         map[string]NFInfo `json:"nfs"`
+	Subscribers int64             `json:"subscribers"`
 	// SubscribersError is set when the subscriber count could not be read, so a
 	// caller can tell "0 subscribers" apart from "the count query failed".
-	SubscribersError string            `json:"subscribers_error,omitempty"`
-	OpenSessions     int64             `json:"open_sessions,omitempty"`
-	ScrapeDurationMS int64             `json:"scrape_duration_ms"`
+	SubscribersError string `json:"subscribers_error,omitempty"`
+	OpenSessions     int64  `json:"open_sessions,omitempty"`
+	ScrapeDurationMS int64  `json:"scrape_duration_ms"`
 }
 
 // NFInfo summarizes one network function.
 type NFInfo struct {
-	Reachable bool   `json:"reachable"`
+	Reachable  bool   `json:"reachable"`
 	MetricsURL string `json:"metrics_url,omitempty"`
-	Error     string `json:"error,omitempty"`
+	Error      string `json:"error,omitempty"`
 }
 
 // subscriberCounter reads the number of provisioned subscribers from the 5G
@@ -134,7 +134,9 @@ func (s *Service) Subscribers(ctx context.Context) ([]string, error) {
 	defer cur.Close(ctx)
 	out := []string{}
 	for cur.Next(ctx) {
-		var d struct{ IMSI string `bson:"imsi"` }
+		var d struct {
+			IMSI string `bson:"imsi"`
+		}
 		if err := cur.Decode(&d); err == nil {
 			out = append(out, d.IMSI)
 		}
