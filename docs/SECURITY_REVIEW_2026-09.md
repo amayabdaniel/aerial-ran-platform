@@ -69,12 +69,12 @@ and it is documented here rather than rotated in this pass for the same reason.
 |---|--------|---------|--------|
 | 1 | AuthN/AuthZ | **EXPOSED** | **FIXED** `880b94c` — cross-tenant IDOR closed |
 | 2 | Injection | not exposed | none needed (parameterized/constant) |
-| 3 | Transport & secrets | **EXPOSED (critical)** | published JWT signing key — see top; ops+cross-entrypoint fix |
+| 3 | Transport & secrets | **EXPOSED (critical)** | CSWSH **FIXED** `986e29e`; published JWT key + DB credential still with Daniel (see top) |
 | 4 | Input handling & DoS | **EXPOSED** | **FIXED** `09c657e` — 4 MiB body limit |
 | 5 | Supply chain | **EXPOSED** | **FIXED** `9726451` — x/text→v0.39.0; digest pinning documented |
 | 6 | Data exposure | **EXPOSED** | **FIXED** `67aab62` — DBError no longer leaks driver text |
 | 7 | Concurrency & state | not exposed (see below) | none needed |
-| 8 | Infra & config | **EXPOSED** | documented; requires manifest apply (below) |
+| 8 | Infra & config | **EXPOSED** | **PARTIALLY FIXED** `4180069` — 7 Go workloads hardened; infra images + NATS auth follow-up |
 
 ## 1 — AuthN/AuthZ — FIXED (`880b94c`)
 
@@ -107,12 +107,14 @@ handler, which escapes control chars, so log injection is not reachable.
   actually used by a default deploy), high severity, in-cluster reach. See the
   dedicated companion section near the top for the breakdown; `sslmode=disable`
   makes the credential and all DB traffic plaintext on the pod network.
-- **WebSocket CSWSH**: `svc-aerial-messaging` sets `InsecureSkipVerify: true` on
-  `websocket.Accept`, disabling Origin checking (cross-site WebSocket hijack if
-  the service is reached directly, bypassing the gateway). Fix: drop the flag
-  (the library then enforces same-origin) and set `OriginPatterns` from
-  `ALLOWED_ORIGINS`. Contained, but the WS-upgrade path is not cleanly unit-
-  testable via `httptest` (no hijack support), so deferred to a targeted change.
+- **WebSocket CSWSH — FIXED (`986e29e`)**: `svc-aerial-messaging` set
+  `InsecureSkipVerify: true` on `websocket.Accept`, disabling Origin checking
+  (cross-site WebSocket hijack if the service is reached directly). Replaced with
+  `OriginPatterns` derived from `ALLOWED_ORIGINS` (via `OriginHostsFromCSV`): the
+  library now enforces same-origin plus the allow-list and rejects everything else
+  with 403, independent of the JWT check. The WS-upgrade path IS unit-testable
+  after all — the Origin check runs before the hijack, so a `httptest` handshake
+  with a hostile Origin gets the 403 (failing-pre-fix test added).
 
 ## 4 — Input handling & DoS — FIXED (`09c657e`)
 
@@ -153,19 +155,30 @@ checks, `RowsAffected`). The iam refresh-token reuse detection revokes the famil
 under the DB's guarantees. No shared mutable state across goroutines beyond the
 pool (thread-safe). Nothing actionable found.
 
-## 8 — Infra & config — EXPOSED (documented, requires manifest apply)
+## 8 — Infra & config — PARTIALLY FIXED (`4180069`)
 
-- **No `securityContext` on any workload** in `infra/k8s/` (no `runAsNonRoot`,
-  `readOnlyRootFilesystem`, dropped capabilities, seccomp); gateway/migrate images
-  run as root. Fix is manifest hardening — cannot apply k8s here.
+- **`securityContext` on the 7 Go service workloads — FIXED (`4180069`)**: added
+  `runAsNonRoot` + `runAsUser: 65532` (Dockerfile.svc now pins a numeric UID so
+  k8s can verify non-root — a named user can't be verified), `drop: [ALL]`
+  capabilities, `allowPrivilegeEscalation: false`, `seccompProfile: RuntimeDefault`.
+  `readOnlyRootFilesystem` is named-excluded pending a write-path audit (can't
+  confirm no code path writes to the FS without a running instance). Written into
+  the manifests, not applied (no cluster) — YAML validated, all 7 asserted.
+  **Follow-up:** the third-party infra images (postgres/nats/nginx gateway/migrate)
+  still have no `securityContext`; they need image-specific work (unprivileged
+  nginx base, postgres UID handling, cap review) rather than a blanket block that
+  would risk breaking root-needing images — left for a targeted pass.
 - **NATS runs with no authentication** (`00-infra.yaml`): any in-cluster pod can
   read/write all JetStream subjects incl. `core.event.message.>`. Fix: NATS creds
   + per-subject authorization — ops change.
 - DB/NATS are `ClusterIP` (not externally exposed); the only external listener is
   the intended gateway NodePort. The k3d dev registry binds `0.0.0.0` (dev only).
 
-**Fronts fixed: 1, 4, 5, 6 (four distinct vectors here; vector 8 fixed in the
-wavekube half of this pass). Deliberately deferred with reasons: 3 and 8** —
-both need secret rotation / manifest application / cross-entrypoint wiring that
-cannot be validated without a running deployment, and are higher-risk to
-half-ship than to document with a concrete recommended fix.
+**Fronts fixed: 1, 4, 5, 6 fully; 3 in part (CSWSH `986e29e` — the WS handshake
+half); 8 in part (`4180069` — the 7 Go workloads).** Still deferred with reasons:
+the two committed-credential findings under 3 (published JWT signing key, DB
+password) are with Daniel — secret rotation + cross-entrypoint wiring that can't
+be validated without a running deployment, higher-risk to half-ship than to
+document; and under 8 the third-party infra images (postgres/nats/nginx/migrate)
++ NATS authentication, which need image-specific work rather than a blanket block
+that would break root-needing images.
