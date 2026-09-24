@@ -15,6 +15,7 @@ import (
 
 func main() {
 	natsURL := runner.EnvOr("NATS_URL", "nats://localhost:14222")
+	allowedOrigins := runner.EnvOr("ALLOWED_ORIGINS", "http://localhost:3000,http://localhost:8080")
 	runner.Run(runner.Opts{
 		ServiceName:  "svc-aerial-messaging",
 		Port:         runner.EnvOr("PORT", "8087"),
@@ -33,7 +34,7 @@ func main() {
 				slog.Error("messaging init failed; exiting so the pod restarts", "err", err)
 				os.Exit(1)
 			}
-			messaging.NewHandler(svc).Mount(mux)
+			messaging.NewHandler(svc, messaging.OriginHostsFromCSV(allowedOrigins)...).Mount(mux)
 		},
 	})
 }

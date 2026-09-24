@@ -10,6 +10,8 @@ import (
 	"errors"
 	"fmt"
 	"net/http"
+	"net/url"
+	"strings"
 	"time"
 
 	"github.com/amayabdaniel/aerial-ran-platform/lib-aerial-go/jwt"
@@ -118,9 +120,39 @@ func (s *Service) Inbox(ctx context.Context, userID string, limit int) ([]Messag
 }
 
 // Handler exposes HTTP endpoints.
-type Handler struct{ svc *Service }
+type Handler struct {
+	svc *Service
+	// allowedOriginHosts are the extra Origin hosts (host[:port], no scheme)
+	// permitted to open the /v1/messages/stream WebSocket, beyond same-origin
+	// which is always allowed. Empty means same-origin only.
+	allowedOriginHosts []string
+}
 
-func NewHandler(s *Service) *Handler { return &Handler{svc: s} }
+// NewHandler wires the handler. originHosts are additional allowed WebSocket
+// Origin hosts (use OriginHostsFromCSV to derive them from an ALLOWED_ORIGINS
+// list); with none, only same-origin upgrades are accepted.
+func NewHandler(s *Service, originHosts ...string) *Handler {
+	return &Handler{svc: s, allowedOriginHosts: originHosts}
+}
+
+// OriginHostsFromCSV turns an "http://a:3000,https://b" CORS-style list into the
+// bare host[:port] patterns the WebSocket Origin check expects (scheme stripped).
+// Entries without a scheme are treated as already being a host.
+func OriginHostsFromCSV(csv string) []string {
+	var hosts []string
+	for _, o := range strings.Split(csv, ",") {
+		o = strings.TrimSpace(o)
+		if o == "" {
+			continue
+		}
+		if u, err := url.Parse(o); err == nil && u.Host != "" {
+			hosts = append(hosts, u.Host)
+		} else {
+			hosts = append(hosts, o)
+		}
+	}
+	return hosts
+}
 
 func (h *Handler) Mount(mux *http.ServeMux) {
 	mux.HandleFunc("POST /v1/messages", h.send)
@@ -168,8 +200,15 @@ func (h *Handler) stream(w http.ResponseWriter, r *http.Request) {
 		respond.Error(w, http.StatusUnauthorized, "unauthorized", "no token")
 		return
 	}
+	// Enforce the WebSocket Origin on the upgrade handshake to prevent cross-site
+	// WebSocket hijacking (CSWSH): a page on another origin must not be able to
+	// open this authenticated stream in a victim's browser. With
+	// InsecureSkipVerify removed, coder/websocket allows same-origin by default
+	// plus any host in OriginPatterns; everything else is rejected with 403. This
+	// is independent of the JWT check above — it guards the browser handshake, not
+	// the token.
 	c, err := websocket.Accept(w, r, &websocket.AcceptOptions{
-		InsecureSkipVerify: true, // dev only — origin checked at gateway in prod
+		OriginPatterns: h.allowedOriginHosts,
 	})
 	if err != nil {
 		return
