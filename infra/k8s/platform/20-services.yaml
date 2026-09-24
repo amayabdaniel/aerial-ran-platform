@@ -12,10 +12,20 @@ spec:
   template:
     metadata: { labels: { app: iam } }
     spec:
+      securityContext:
+        runAsNonRoot: true
+        runAsUser: 65532
+        runAsGroup: 65532
+        seccompProfile: { type: RuntimeDefault }
       containers:
         - name: iam
           image: aerial-iam:dev
           imagePullPolicy: IfNotPresent
+          securityContext:
+            allowPrivilegeEscalation: false
+            capabilities: { drop: [ALL] }
+            # readOnlyRootFilesystem intentionally omitted: unverifiable without a
+            # running instance to confirm no code path writes to the container FS.
           ports: [ { containerPort: 8081 } ]
           env:
             - { name: PORT, value: "8081" }
@@ -42,10 +52,20 @@ spec:
   template:
     metadata: { labels: { app: subscriber } }
     spec:
+      securityContext:
+        runAsNonRoot: true
+        runAsUser: 65532
+        runAsGroup: 65532
+        seccompProfile: { type: RuntimeDefault }
       containers:
         - name: subscriber
           image: aerial-subscriber:dev
           imagePullPolicy: IfNotPresent
+          securityContext:
+            allowPrivilegeEscalation: false
+            capabilities: { drop: [ALL] }
+            # readOnlyRootFilesystem intentionally omitted: unverifiable without a
+            # running instance to confirm no code path writes to the container FS.
           ports: [ { containerPort: 8082 } ]
           env:
             - { name: PORT, value: "8082" }
@@ -76,10 +96,20 @@ spec:
   template:
     metadata: { labels: { app: esim } }
     spec:
+      securityContext:
+        runAsNonRoot: true
+        runAsUser: 65532
+        runAsGroup: 65532
+        seccompProfile: { type: RuntimeDefault }
       containers:
         - name: esim
           image: aerial-esim:dev
           imagePullPolicy: IfNotPresent
+          securityContext:
+            allowPrivilegeEscalation: false
+            capabilities: { drop: [ALL] }
+            # readOnlyRootFilesystem intentionally omitted: unverifiable without a
+            # running instance to confirm no code path writes to the container FS.
           ports: [ { containerPort: 8083 } ]
           env:
             - { name: PORT, value: "8083" }
@@ -107,10 +137,20 @@ spec:
   template:
     metadata: { labels: { app: provision } }
     spec:
+      securityContext:
+        runAsNonRoot: true
+        runAsUser: 65532
+        runAsGroup: 65532
+        seccompProfile: { type: RuntimeDefault }
       containers:
         - name: provision
           image: aerial-provision:dev
           imagePullPolicy: IfNotPresent
+          securityContext:
+            allowPrivilegeEscalation: false
+            capabilities: { drop: [ALL] }
+            # readOnlyRootFilesystem intentionally omitted: unverifiable without a
+            # running instance to confirm no code path writes to the container FS.
           ports: [ { containerPort: 8084 } ]
           env:
             - { name: PORT, value: "8084" }
@@ -138,10 +178,20 @@ spec:
     metadata: { labels: { app: ranctl } }
     spec:
       serviceAccountName: aerial-ranctl
+      securityContext:
+        runAsNonRoot: true
+        runAsUser: 65532
+        runAsGroup: 65532
+        seccompProfile: { type: RuntimeDefault }
       containers:
         - name: ranctl
           image: aerial-ran-control:dev
           imagePullPolicy: IfNotPresent
+          securityContext:
+            allowPrivilegeEscalation: false
+            capabilities: { drop: [ALL] }
+            # readOnlyRootFilesystem intentionally omitted: unverifiable without a
+            # running instance to confirm no code path writes to the container FS.
           ports: [ { containerPort: 8085 } ]
           env:
             - { name: PORT, value: "8085" }
@@ -176,10 +226,20 @@ spec:
   template:
     metadata: { labels: { app: billing } }
     spec:
+      securityContext:
+        runAsNonRoot: true
+        runAsUser: 65532
+        runAsGroup: 65532
+        seccompProfile: { type: RuntimeDefault }
       containers:
         - name: billing
           image: aerial-billing:dev
           imagePullPolicy: IfNotPresent
+          securityContext:
+            allowPrivilegeEscalation: false
+            capabilities: { drop: [ALL] }
+            # readOnlyRootFilesystem intentionally omitted: unverifiable without a
+            # running instance to confirm no code path writes to the container FS.
           ports: [ { containerPort: 8086 } ]
           env:
             - { name: PORT, value: "8086" }
@@ -206,10 +266,20 @@ spec:
   template:
     metadata: { labels: { app: messaging } }
     spec:
+      securityContext:
+        runAsNonRoot: true
+        runAsUser: 65532
+        runAsGroup: 65532
+        seccompProfile: { type: RuntimeDefault }
       containers:
         - name: messaging
           image: aerial-messaging:dev
           imagePullPolicy: IfNotPresent
+          securityContext:
+            allowPrivilegeEscalation: false
+            capabilities: { drop: [ALL] }
+            # readOnlyRootFilesystem intentionally omitted: unverifiable without a
+            # running instance to confirm no code path writes to the container FS.
           ports: [ { containerPort: 8087 } ]
           env:
             - { name: PORT, value: "8087" }

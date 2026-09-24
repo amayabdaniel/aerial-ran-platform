@@ -22,11 +22,13 @@ RUN go build -trimpath -ldflags="-s -w" -o /out/server ./cmd/server
 
 FROM alpine:3.20 AS runtime
 
-RUN addgroup -S aerial && adduser -S -G aerial aerial && \
+RUN addgroup -S -g 65532 aerial && adduser -S -G aerial -u 65532 aerial && \
     apk add --no-cache ca-certificates tzdata
 
 COPY --from=build /out/server /usr/local/bin/server
 
-USER aerial
+# Numeric UID (not the "aerial" name) so Kubernetes can verify runAsNonRoot at
+# admission — a named user leaves the UID unknown and runAsNonRoot:true fails.
+USER 65532
 EXPOSE 8080
 ENTRYPOINT ["/usr/local/bin/server"]
