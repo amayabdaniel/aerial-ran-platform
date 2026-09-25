@@ -74,7 +74,7 @@ and it is documented here rather than rotated in this pass for the same reason.
 | 5 | Supply chain | **EXPOSED** | **FIXED** `9726451` — x/text→v0.39.0; digest pinning documented |
 | 6 | Data exposure | **EXPOSED** | **FIXED** `67aab62` — DBError no longer leaks driver text |
 | 7 | Concurrency & state | not exposed (see below) | none needed |
-| 8 | Infra & config | **EXPOSED** | **PARTIALLY FIXED** `4180069` — 7 Go workloads hardened; infra images + NATS auth follow-up |
+| 8 | Infra & config | **EXPOSED** | **PARTIALLY FIXED** `4180069` (7 Go workloads) + `fcf5137` (infra workloads, per-image); NATS auth + non-root postgres/nginx follow-up |
 
 ## 1 — AuthN/AuthZ — FIXED (`880b94c`)
 
@@ -164,10 +164,16 @@ pool (thread-safe). Nothing actionable found.
   `readOnlyRootFilesystem` is named-excluded pending a write-path audit (can't
   confirm no code path writes to the FS without a running instance). Written into
   the manifests, not applied (no cluster) — YAML validated, all 7 asserted.
-  **Follow-up:** the third-party infra images (postgres/nats/nginx gateway/migrate)
-  still have no `securityContext`; they need image-specific work (unprivileged
-  nginx base, postgres UID handling, cap review) rather than a blanket block that
-  would risk breaking root-needing images — left for a targeted pass.
+- **`securityContext` on the infra workloads — FIXED per-image (`fcf5137`)**:
+  taken one at a time, not swept. **nats** and the **migrate job** go fully
+  non-root (`runAsNonRoot`, drop ALL caps, seccomp) — nats is a static binary on
+  an emptyDir with high ports, migrate is a client-only job (uid 70, no writes,
+  no privileged port); both safe by construction. **postgres** and the **nginx
+  gateway** get only the safe pair (`allowPrivilegeEscalation: false` +
+  `seccompProfile: RuntimeDefault`); `runAsNonRoot`/drop-caps are named-deferred
+  in-line — postgres needs root initdb + a tested non-root PGDATA, and nginx
+  binds :80 so it needs an unprivileged image or a port change threaded through
+  nginx.conf + Service. Written not applied; kustomize renders clean.
 - **NATS runs with no authentication** (`00-infra.yaml`): any in-cluster pod can
   read/write all JetStream subjects incl. `core.event.message.>`. Fix: NATS creds
   + per-subject authorization — ops change.
@@ -175,10 +181,11 @@ pool (thread-safe). Nothing actionable found.
   the intended gateway NodePort. The k3d dev registry binds `0.0.0.0` (dev only).
 
 **Fronts fixed: 1, 4, 5, 6 fully; 3 in part (CSWSH `986e29e` — the WS handshake
-half); 8 in part (`4180069` — the 7 Go workloads).** Still deferred with reasons:
-the two committed-credential findings under 3 (published JWT signing key, DB
-password) are with Daniel — secret rotation + cross-entrypoint wiring that can't
-be validated without a running deployment, higher-risk to half-ship than to
-document; and under 8 the third-party infra images (postgres/nats/nginx/migrate)
-+ NATS authentication, which need image-specific work rather than a blanket block
-that would break root-needing images.
+half); 8 in part (`4180069` the 7 Go workloads + `fcf5137` the infra workloads
+per-image — nats/migrate fully non-root, postgres/nginx the safe pair).** Still
+deferred with reasons: the two committed-credential findings under 3 (published
+JWT signing key, DB password) are with Daniel — secret rotation + cross-entrypoint
+wiring that can't be validated without a running deployment, higher-risk to
+half-ship than to document; and under 8, non-root postgres (root initdb) and
+non-root nginx (binds :80), plus NATS authentication — each needs a change that
+can't be verified without running it.
