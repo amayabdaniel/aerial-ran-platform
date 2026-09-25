@@ -15,12 +15,25 @@ spec:
       labels: { app: aerial-migrate }
     spec:
       restartPolicy: OnFailure
+      # The migrate job only runs `sh /migrate.sh` → psql against a remote host:
+      # a client, not the postgres server entrypoint. No local writes, no data
+      # dir, no privileged port, and its baked-in SQL is world-readable — so it
+      # runs non-root (uid 70, the postgres user present in the image). Written,
+      # not applied; reasoned safe by construction.
+      securityContext:
+        runAsNonRoot: true
+        runAsUser: 70
+        runAsGroup: 70
+        seccompProfile: { type: RuntimeDefault }
       nodeSelector:
         kubernetes.io/hostname: k3d-aerial-server-0
       containers:
         - name: migrate
           image: aerial-migrate:dev
           imagePullPolicy: IfNotPresent
+          securityContext:
+            allowPrivilegeEscalation: false
+            capabilities: { drop: [ALL] }
           env:
             - name: PGHOST
               value: postgres.aerial.svc.cluster.local

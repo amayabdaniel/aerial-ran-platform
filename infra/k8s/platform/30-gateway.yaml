@@ -13,6 +13,16 @@ spec:
         - name: gateway
           image: aerial-gateway:dev
           imagePullPolicy: IfNotPresent
+          securityContext:
+            # Safe as-is. runAsNonRoot + drop-caps deferred: the stock nginx image
+            # binds :80 (privileged), so a non-root gateway needs either the
+            # nginxinc/nginx-unprivileged image (listens :8080) or a listen-port
+            # change threaded through nginx.conf + this containerPort + the
+            # Service targetPort — a coordinated change that can't be verified
+            # without running it. Dropping ALL caps while root binds :80 would
+            # strip CAP_NET_BIND_SERVICE and break the bind, so caps are left.
+            allowPrivilegeEscalation: false
+            seccompProfile: { type: RuntimeDefault }
           ports: [ { containerPort: 80 } ]
           readinessProbe: { httpGet: { path: /healthz, port: 80 }, initialDelaySeconds: 3, periodSeconds: 5 }
           resources: { requests: { cpu: 25m, memory: 32Mi }, limits: { cpu: 500m, memory: 128Mi } }

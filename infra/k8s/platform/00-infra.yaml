@@ -88,6 +88,15 @@ spec:
       containers:
         - name: postgres
           image: postgres:17-alpine
+          securityContext:
+            # These two are safe as-is: gosu drops root→postgres by lowering
+            # privileges (never blocked by no_new_privs), and postgres runs under
+            # the runtime's default seccomp normally. runAsNonRoot + drop-caps are
+            # deferred: initdb needs root to set up PGDATA and a non-root data dir
+            # needs a tested fsGroup + PVC-permission setup that can't be verified
+            # without running it.
+            allowPrivilegeEscalation: false
+            seccompProfile: { type: RuntimeDefault }
           args:
             - -c
             - shared_preload_libraries=pg_stat_statements
@@ -143,9 +152,25 @@ spec:
     metadata:
       labels: { app: nats }
     spec:
+      # NATS is a static Go binary that binds only high ports (4222/8222) and
+      # writes JetStream state solely to /data, an emptyDir made group-writable
+      # by fsGroup — so it runs fully non-root by construction (same basis as the
+      # Go services). Written, not applied (no cluster); reasoned safe.
+      securityContext:
+        runAsNonRoot: true
+        runAsUser: 1000
+        runAsGroup: 1000
+        fsGroup: 1000
+        seccompProfile: { type: RuntimeDefault }
       containers:
         - name: nats
           image: nats:2.10-alpine
+          securityContext:
+            allowPrivilegeEscalation: false
+            capabilities: { drop: [ALL] }
+            # readOnlyRootFilesystem omitted (as for the Go services): /data is a
+            # mounted volume, but the full root-FS write set isn't verifiable
+            # without running it.
           args: ["-js", "-sd", "/data", "-m", "8222"]
           ports:
             - { containerPort: 4222, name: client }
