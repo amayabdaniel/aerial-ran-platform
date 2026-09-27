@@ -30,7 +30,14 @@ func TestMockCatalogScopedByRegion(t *testing.T) {
 
 func TestMockCatalogDefaultsRegion(t *testing.T) {
 	m := NewMock()
-	offers, _ := m.Catalog(context.Background(), "")
+	offers, err := m.Catalog(context.Background(), "")
+	if err != nil {
+		t.Fatalf("catalog: %v", err)
+	}
+	// Without this, an empty catalog would pass vacuously (the loop never runs).
+	if len(offers) == 0 {
+		t.Fatal("empty region should still return the default (GLOBAL) catalog, got none")
+	}
 	for _, o := range offers {
 		if o.Region != "GLOBAL" {
 			t.Fatalf("empty region should default to GLOBAL, got %q", o.Region)
