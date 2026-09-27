@@ -282,6 +282,12 @@ lint:
 		cd $(ROOT); \
 	done
 
+# Assert the securityContext hardening is actually present on every workload —
+# `make k8s-up` rendering cleanly only proves the YAML parses, not that the
+# fields are there. Fails if a new deployment is added without them.
+verify-manifests:
+	@python3 scripts/verify-securitycontext.py
+
 tidy:
 	@for svc in $(SERVICES) $(LIB); do \
 		echo ">>> go mod tidy $$svc"; \
@@ -337,7 +343,7 @@ env-check:
 print-services:
 	@echo $(SERVICES)
 
-.PHONY: up up-no-build down reset logs ps health migrate \
+.PHONY: up up-no-build down reset logs ps health migrate verify-manifests \
 	k3d-up k3d-down k3d-ctx helm-repos core-up ran-up ran-down ran-health \
 	build build-svcs run-svcs stop-svcs status-svcs logs-svcs \
 	mongo-pf-up mongo-pf-down all-up all-down seed-family \
