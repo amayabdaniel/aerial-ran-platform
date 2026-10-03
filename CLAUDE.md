@@ -158,13 +158,28 @@ make down k3d-down
 
 ## Observability
 
-- Prometheus `/metrics` (RED + DB pool)
-- OTel traces → Tempo (or Jaeger in dev)
-- Loki for logs (Promtail scrapes Docker)
-- Grafana provisioned dashboards
-- Slow query log >200 ms (Postgres `log_min_duration_statement`)
-- DCGM exporter for GPU (Phase 3)
-- Aerial Sample Apps exporter for L1 KPIs (Phase 3)
+**Live today** (dev compose + k8s):
+- Prometheus `/metrics` — **RED only**: `http_requests_total{service,method,path,status}`,
+  `http_request_duration_seconds`, `http_in_flight_requests`, wired via
+  `metrics.Middleware` in all 7 services (the `status` label carries the error
+  dimension). **DB-pool gauges are NOT emitted** — the pgxpool `Stat()` is never
+  exported; a "pool saturation" panel would be empty. Planned, not present.
+- OTel **traces** → OTel Collector → Jaeger (dev). Services install a
+  TracerProvider only — no OTLP *metrics* are sent, so the collector's metrics
+  pipeline and its `otel-collector:8889` scrape carry no application metrics.
+- Slow query log >200 ms — Postgres `log_min_duration_statement=200`, set in both
+  `docker-compose.yml` and the k8s manifest.
+- Prometheus also scrapes the Postgres exporter and NATS `/varz`.
+
+**Claimed previously but NOT present — wire before relying on them:**
+- **Grafana dashboards are not provisioned** — `otel/grafana/{dashboards,provisioning}`
+  are empty (0 files); Grafana boots with none. There is no build-info metric, so
+  no rollout-style always-false alert exists either (there are no alert rules).
+- **Loki has no log shipper** — Loki runs but there is no Promtail/Alloy, so it
+  ingests nothing; service logs go to stdout via slog only.
+
+**Phased (not built, correctly deferred):**
+- DCGM exporter for GPU (Phase 3) · Aerial Sample Apps exporter for L1 KPIs (Phase 3)
 - KPM v3 → FlexRIC xApp → NATS → ClickHouse (Phase 2+)
 
 ## Mobile clients
