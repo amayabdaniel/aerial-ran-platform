@@ -51,6 +51,7 @@ func main() {
 		os.Exit(1)
 	}
 	defer pool.Close()
+	metrics.RegisterDBPool(serviceName, func() metrics.DBPoolStats { return pool.Stat() })
 
 	repo := repository.New(pool)
 	issuer := jwtlib.New(cfg.JWTSecret, cfg.JWTIssuer, cfg.JWTAudience, cfg.AccessTokenTTL)

@@ -52,6 +52,7 @@ func main() {
 		os.Exit(1)
 	}
 	defer pool.Close()
+	metrics.RegisterDBPool(serviceName, func() metrics.DBPoolStats { return pool.Stat() })
 
 	mongoClient, err := open5gs.New(ctx, cfg.OpenMongoURI, cfg.OpenMongoDB)
 	if err != nil {

@@ -55,6 +55,7 @@ func Run(opts Opts) {
 		os.Exit(1)
 	}
 	defer pool.Close()
+	metrics.RegisterDBPool(opts.ServiceName, func() metrics.DBPoolStats { return pool.Stat() })
 
 	issuer := jwtlib.New(opts.JWTSecret, opts.JWTIssuer, opts.JWTAudience, 15*time.Minute)
 

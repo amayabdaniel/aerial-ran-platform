@@ -52,6 +52,7 @@ func main() {
 		os.Exit(1)
 	}
 	defer pool.Close()
+	metrics.RegisterDBPool(serviceName, func() metrics.DBPoolStats { return pool.Stat() })
 
 	// Provider selection: real Airalo when both credentials are set, else mock.
 	var prov provider.Provider

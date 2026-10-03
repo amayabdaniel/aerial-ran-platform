@@ -159,11 +159,15 @@ make down k3d-down
 ## Observability
 
 **Live today** (dev compose + k8s):
-- Prometheus `/metrics` — **RED only**: `http_requests_total{service,method,path,status}`,
-  `http_request_duration_seconds`, `http_in_flight_requests`, wired via
-  `metrics.Middleware` in all 7 services (the `status` label carries the error
-  dimension). **DB-pool gauges are NOT emitted** — the pgxpool `Stat()` is never
-  exported; a "pool saturation" panel would be empty. Planned, not present.
+- Prometheus `/metrics` — **RED + DB-pool gauges**. RED:
+  `http_requests_total{service,method,path,status}`, `http_request_duration_seconds`,
+  `http_in_flight_requests`, wired via `metrics.Middleware` (the `status` label
+  carries the error dimension). DB pool: `db_pool_{acquired,idle,total,max}_conns`
+  + `db_pool_acquire_wait_seconds_total`, via a scrape-time collector
+  (`metrics.RegisterDBPool`) that reads pgxpool `Stat()` on scrape — not per
+  request. Both sets carry a `service` label and are wired in all 7 services. Pool
+  saturation is invisible in RED (it surfaces only as rising latency with no
+  cause), so these gauges are the signal that points at it.
 - OTel **traces** → OTel Collector → Jaeger (dev). Services install a
   TracerProvider only — no OTLP *metrics* are sent, so the collector's metrics
   pipeline and its `otel-collector:8889` scrape carry no application metrics.
