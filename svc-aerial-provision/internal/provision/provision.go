@@ -13,6 +13,7 @@ import (
 	"github.com/amayabdaniel/aerial-ran-platform/lib-aerial-go/jwt"
 	"github.com/amayabdaniel/aerial-ran-platform/lib-aerial-go/respond"
 	"github.com/jackc/pgx/v5"
+	"github.com/jackc/pgx/v5/pgconn"
 	"github.com/jackc/pgx/v5/pgxpool"
 )
 
@@ -102,6 +103,14 @@ func (s *Service) CreateSubscription(ctx context.Context, orgID string, req Crea
 		 RETURNING id::text, started_at, created_at, updated_at`,
 		sub.OrgID, sub.UserID, sub.PlanID, ptr(sub.SIMID), ptr(sub.ESIMID),
 	).Scan(&sub.ID, &sub.StartedAt, &sub.CreatedAt, &sub.UpdatedAt)
+	// A 23505 here is the partial unique index subscriptions_user_plan_active_uniq
+	// (the only unique constraint this INSERT can hit): a non-cancelled
+	// subscription already exists for this user+plan. Surface it as ErrSubExists
+	// (→ 409) rather than an opaque 500.
+	var pgErr *pgconn.PgError
+	if errors.As(err, &pgErr) && pgErr.Code == "23505" {
+		return nil, ErrSubExists
+	}
 	return sub, err
 }
 
@@ -197,6 +206,10 @@ func (h *Handler) createSub(w http.ResponseWriter, r *http.Request) {
 	sub, err := h.svc.CreateSubscription(r.Context(), claims.OrgID, req)
 	if errors.Is(err, ErrPlanNotFound) {
 		respond.Error(w, http.StatusNotFound, "not_found", "plan not found")
+		return
+	}
+	if errors.Is(err, ErrSubExists) {
+		respond.Error(w, http.StatusConflict, "conflict", err.Error())
 		return
 	}
 	if err != nil {

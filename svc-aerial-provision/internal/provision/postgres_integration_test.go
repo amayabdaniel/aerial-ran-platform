@@ -148,3 +148,39 @@ func TestIntegrationCreateSubscriptionValidatesPlan(t *testing.T) {
 		t.Fatalf("a different org must see none, got %d", len(subs))
 	}
 }
+
+// The partial unique index (migration 000003): at most one NON-cancelled
+// subscription per (user, plan). A duplicate active subscription is rejected as
+// ErrSubExists; a different plan is fine; and after cancelling, the user may
+// re-subscribe to the same plan — that is the whole point of the
+// WHERE status <> 'cancelled' clause. Without the migration the duplicate INSERT
+// would succeed, so this fails before it and passes after.
+func TestIntegrationSubscriptionUniqueness(t *testing.T) {
+	pool := startPostgres(t)
+	svc := New(pool)
+	ctx := context.Background()
+	org, user := uuid.NewString(), uuid.NewString()
+
+	first, err := svc.CreateSubscription(ctx, org, CreateSubRequest{UserID: user, PlanID: "aerial-basic"})
+	if err != nil {
+		t.Fatalf("first subscription: %v", err)
+	}
+
+	// Duplicate active subscription to the same plan: rejected.
+	if _, err := svc.CreateSubscription(ctx, org, CreateSubRequest{UserID: user, PlanID: "aerial-basic"}); !errors.Is(err, ErrSubExists) {
+		t.Fatalf("duplicate active subscription must be ErrSubExists, got %v", err)
+	}
+
+	// A different plan for the same user is allowed.
+	if _, err := svc.CreateSubscription(ctx, org, CreateSubRequest{UserID: user, PlanID: "aerial-family"}); err != nil {
+		t.Fatalf("different plan should be allowed, got %v", err)
+	}
+
+	// After cancelling, re-subscribing to the same plan is allowed.
+	if err := svc.Cancel(ctx, org, first.ID); err != nil {
+		t.Fatalf("cancel: %v", err)
+	}
+	if _, err := svc.CreateSubscription(ctx, org, CreateSubRequest{UserID: user, PlanID: "aerial-basic"}); err != nil {
+		t.Fatalf("re-subscribe after cancel should be allowed (partial index), got %v", err)
+	}
+}
