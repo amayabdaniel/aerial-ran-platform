@@ -260,30 +260,48 @@ wavekube-logs:
 
 test-unit:
 	@echo "=== Go Unit Tests ==="
-	@for svc in $(SERVICES) $(LIB); do \
-		cd $(ROOT)/$$svc && \
-		fail=$$(GOWORK=$(GOWORK) go test -race ./... 2>&1 | grep "^FAIL" || true); \
-		if [ -z "$$fail" ]; then echo "OK  $$svc"; else echo "FAIL $$svc"; echo "$$fail"; fi; \
-		cd $(ROOT); \
-	done
+	@rc=0; total=0; for svc in $(SERVICES) $(LIB); do \
+		dir="$(ROOT)/$$svc"; \
+		if [ ! -d "$$dir" ]; then echo "FAIL $$svc — directory missing: $$dir"; rc=1; continue; fi; \
+		out=$$(cd "$$dir" && GOWORK=$(GOWORK) go test -race -count=1 -v ./... 2>&1); st=$$?; \
+		pass=$$(printf '%s\n' "$$out" | grep -c '^--- PASS'); total=$$((total+pass)); \
+		if [ $$st -eq 0 ]; then echo "OK  $$svc ($$pass tests)"; \
+		else echo "FAIL $$svc"; printf '%s\n' "$$out" | grep -E '^(--- FAIL|FAIL|# |.*\.go:[0-9]+:)' | head -30; rc=1; fi; \
+	done; \
+	echo "total unit tests passed: $$total"; \
+	if [ $$rc -ne 0 ]; then echo "test-unit FAILED"; fi; \
+	exit $$rc
 
+# GOWORK uses the workspace here (NOT off): each module's testcontainers deps
+# resolve correctly under go.work (verified by compiling every integration
+# package), and GOWORK=off has repeatedly produced false setup failures in this
+# repo. Integration test files are discovered anywhere in the module (not only
+# internal/repository), so provision's internal/provision suite is included.
 test-integration:
 	@echo "=== Integration Tests (testcontainers — needs Docker) ==="
-	@for svc in $(SERVICES); do \
-		if [ ! -d "$(ROOT)/$$svc/internal/repository" ]; then continue; fi; \
-		cd $(ROOT)/$$svc && \
-		fail=$$(GOWORK=off go test -tags integration -count=1 ./internal/repository/... 2>&1 | grep "^FAIL" || true); \
-		if [ -z "$$fail" ]; then echo "OK  $$svc"; else echo "FAIL $$svc"; echo "$$fail"; fi; \
-		cd $(ROOT); \
-	done
+	@rc=0; ran=0; for svc in $(SERVICES); do \
+		dir="$(ROOT)/$$svc"; \
+		if [ ! -d "$$dir" ]; then echo "FAIL $$svc — directory missing: $$dir"; rc=1; continue; fi; \
+		if [ -z "$$(find "$$dir" -name '*_integration_test.go' 2>/dev/null | head -1)" ]; then continue; fi; \
+		ran=$$((ran+1)); \
+		out=$$(cd "$$dir" && GOWORK=$(GOWORK) go test -tags integration -count=1 -v ./... 2>&1); st=$$?; \
+		pass=$$(printf '%s\n' "$$out" | grep -c '^--- PASS'); skip=$$(printf '%s\n' "$$out" | grep -c '^--- SKIP'); \
+		if [ $$st -eq 0 ]; then echo "OK  $$svc ($$pass passed, $$skip skipped)"; \
+		else echo "FAIL $$svc"; printf '%s\n' "$$out" | grep -E '^(--- FAIL|FAIL|# |.*\.go:[0-9]+:)' | head -30; rc=1; fi; \
+	done; \
+	echo "integration modules exercised: $$ran"; \
+	if [ $$rc -ne 0 ]; then echo "test-integration FAILED"; fi; \
+	exit $$rc
 
+# A gate: lint findings (golangci-lint non-zero exit) FAIL the target. No || true.
 lint:
 	@command -v golangci-lint >/dev/null || { echo "install golangci-lint: brew install golangci-lint"; exit 1; }
-	@for svc in $(SERVICES) $(LIB); do \
+	@rc=0; for svc in $(SERVICES) $(LIB); do \
 		echo ">>> linting $$svc"; \
-		cd $(ROOT)/$$svc && GOWORK=$(GOWORK) golangci-lint run ./... || true; \
-		cd $(ROOT); \
-	done
+		(cd "$(ROOT)/$$svc" && GOWORK=$(GOWORK) golangci-lint run ./...) || rc=1; \
+	done; \
+	if [ $$rc -ne 0 ]; then echo "lint FAILED"; fi; \
+	exit $$rc
 
 # Assert the securityContext hardening is actually present on every workload —
 # `make k8s-up` rendering cleanly only proves the YAML parses, not that the
