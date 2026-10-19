@@ -72,7 +72,7 @@ func (a *Airalo) token(ctx context.Context) (string, error) {
 	if err != nil {
 		return "", err
 	}
-	defer res.Body.Close()
+	defer res.Body.Close() //nolint:errcheck // HTTP response body close on cleanup; error not actionable
 	if res.StatusCode/100 != 2 {
 		body, _ := io.ReadAll(res.Body)
 		return "", fmt.Errorf("airalo token %d: %s", res.StatusCode, string(body))
@@ -112,7 +112,7 @@ func (a *Airalo) do(ctx context.Context, method, path string, body any, out any)
 	if err != nil {
 		return err
 	}
-	defer res.Body.Close()
+	defer res.Body.Close() //nolint:errcheck // HTTP response body close on cleanup; error not actionable
 	if res.StatusCode/100 != 2 {
 		bd, _ := io.ReadAll(res.Body)
 		return fmt.Errorf("airalo %s %s -> %d: %s", method, path, res.StatusCode, string(bd))

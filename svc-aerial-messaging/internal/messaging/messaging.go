@@ -213,7 +213,7 @@ func (h *Handler) stream(w http.ResponseWriter, r *http.Request) {
 	if err != nil {
 		return
 	}
-	defer c.CloseNow()
+	defer c.CloseNow() //nolint:errcheck // websocket close on handler exit; error not actionable
 
 	subject := fmt.Sprintf("%s.%s", subjectSent, claims.UserID)
 	cons, err := h.svc.js.OrderedConsumer(r.Context(), streamName, jetstream.OrderedConsumerConfig{

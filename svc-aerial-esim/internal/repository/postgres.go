@@ -32,7 +32,7 @@ func (p *Postgres) UpsertPackages(ctx context.Context, pkgs []model.Package) err
 		)
 	}
 	br := p.pool.SendBatch(ctx, batch)
-	defer br.Close()
+	defer br.Close() //nolint:errcheck // pgx batch results close on cleanup; error not actionable
 	for range pkgs {
 		if _, err := br.Exec(); err != nil {
 			return err

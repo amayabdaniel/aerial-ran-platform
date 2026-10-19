@@ -103,7 +103,7 @@ func (s *Service) Status(ctx context.Context) (*Status, error) {
 				info.Error = res.Status
 			}
 			_, _ = io.Copy(io.Discard, res.Body)
-			res.Body.Close()
+			res.Body.Close() //nolint:errcheck // HTTP response body close on cleanup; error not actionable
 		}
 		st.NFs[name] = info
 	}
@@ -131,7 +131,7 @@ func (s *Service) Subscribers(ctx context.Context) ([]string, error) {
 	if err != nil {
 		return nil, err
 	}
-	defer cur.Close(ctx)
+	defer cur.Close(ctx) //nolint:errcheck // mongo cursor close on cleanup; error not actionable
 	out := []string{}
 	for cur.Next(ctx) {
 		var d struct {

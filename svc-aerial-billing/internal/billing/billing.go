@@ -59,7 +59,7 @@ func (s *Service) Ingest(ctx context.Context, e UsageEvent) error {
 	if err != nil {
 		return err
 	}
-	defer tx.Rollback(ctx)
+	defer tx.Rollback(ctx) //nolint:errcheck // rollback is a no-op after a successful commit; error not actionable
 	if _, err := tx.Exec(ctx,
 		`INSERT INTO billing.usage_events(org_id, user_id, source, resource_id, data_mb, minutes, sms_count, cents, occurred_at)
 		 VALUES ($1::uuid, NULLIF($2,'')::uuid, $3, $4, $5, $6, $7, $8, $9)`,
