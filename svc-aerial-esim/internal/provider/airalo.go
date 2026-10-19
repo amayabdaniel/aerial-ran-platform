@@ -16,8 +16,11 @@ import (
 	"errors"
 	"fmt"
 	"io"
+	"log/slog"
 	"net/http"
 	"net/url"
+	"regexp"
+	"strconv"
 	"strings"
 	"sync"
 	"time"
@@ -149,11 +152,20 @@ func (a *Airalo) Catalog(ctx context.Context, region string) ([]PackageOffering,
 	var out []PackageOffering
 	for _, c := range resp.Data {
 		for _, op := range c.OperatorPackages {
+			mb, err := parseDataMB(op.Data)
+			if err != nil {
+				// Do not surface a package whose data allowance we cannot quantify
+				// as a fabricated 0 MB — that silently wrong figure drives billing
+				// and provisioning. Skip it and make the parse failure visible.
+				slog.Warn("airalo: skipping package with unparseable data allowance",
+					"package", op.ID, "data", op.Data, "err", err)
+				continue
+			}
 			out = append(out, PackageOffering{
 				ID:            op.ID,
 				Label:         op.Title,
 				Region:        strings.ToUpper(c.Country.Slug),
-				DataMB:        parseDataMB(op.Data),
+				DataMB:        mb,
 				ValidityDays:  op.Day,
 				PriceUSDCents: int(op.NetPriceUSD * 100),
 			})
@@ -215,17 +227,40 @@ func (a *Airalo) UsageMB(ctx context.Context, iccid string) (int, error) {
 // Cancel — Airalo doesn't expose cancellation in the partner API publicly; no-op.
 func (*Airalo) Cancel(_ context.Context, _ string) error { return nil }
 
-// parseDataMB turns Airalo's data string like "5 GB" or "500 MB" into MB.
-func parseDataMB(s string) int {
-	var n float64
-	var unit string
-	fmt.Sscanf(s, "%f %s", &n, &unit)
-	switch strings.ToUpper(unit) {
-	case "GB":
-		return int(n * 1024)
-	case "MB":
-		return int(n)
-	default:
-		return 0
+// DataUnlimited is the DataMB sentinel for an unlimited plan — distinct from 0
+// so "unlimited" and "no data" are never conflated.
+const DataUnlimited = -1
+
+var dataAllowanceRe = regexp.MustCompile(`^([0-9]+(?:\.[0-9]+)?)\s*(KB|MB|GB|TB)$`)
+
+// parseDataMB converts an Airalo data-allowance string ("5 GB", "500MB",
+// "1 TB", "Unlimited") to megabytes. It returns an error for anything it cannot
+// parse rather than a silent 0, so an unparseable value and a genuine zero are
+// distinguishable by the caller — the old version collapsed "5GB" (no space),
+// "1 TB" (unhandled unit), "unlimited", "" and a real "0 GB" all to 0, which
+// drives billing and provisioning. "Unlimited" maps to DataUnlimited, not 0.
+func parseDataMB(s string) (int, error) {
+	t := strings.TrimSpace(s)
+	if strings.EqualFold(t, "unlimited") {
+		return DataUnlimited, nil
 	}
+	m := dataAllowanceRe.FindStringSubmatch(strings.ToUpper(t))
+	if m == nil {
+		return 0, fmt.Errorf("unparseable data allowance %q", s)
+	}
+	n, err := strconv.ParseFloat(m[1], 64)
+	if err != nil {
+		return 0, fmt.Errorf("unparseable data allowance %q: %w", s, err)
+	}
+	switch m[2] {
+	case "TB":
+		return int(n * 1024 * 1024), nil
+	case "GB":
+		return int(n * 1024), nil
+	case "MB":
+		return int(n), nil
+	case "KB":
+		return int(n / 1024), nil
+	}
+	return 0, fmt.Errorf("unknown data unit in %q", s)
 }
