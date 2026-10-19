@@ -191,7 +191,10 @@ k8s-import:
 
 # Apply manifests (via kustomize, which pins workloads to the server node),
 # wait for the migrate Job, then the gateway.
-k8s-apply:
+k8s-secrets:
+	@./scripts/gen-secrets.sh
+
+k8s-apply: k8s-secrets
 	kubectl apply -k infra/k8s/platform
 	kubectl -n aerial rollout status deploy/postgres --timeout=120s
 	kubectl -n aerial rollout status deploy/nats --timeout=120s

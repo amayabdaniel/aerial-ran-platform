@@ -16,6 +16,21 @@ resources:
   # 10-migrate-job.yaml is applied separately by `make k8s-apply` after Postgres
   # is ready, so it is intentionally not listed here.
 
+# aerial-secrets is generated from a gitignored secrets.env (fresh random
+# credentials via `make k8s-secrets`) instead of being a committed literal. The
+# name suffix hash is disabled so the Secret stays named `aerial-secrets`: the 14
+# secretKeyRefs in 20-services.yaml and the separately-applied migrate Job resolve
+# it unchanged. Run `make k8s-secrets` (or `make k8s-up`, which does) before
+# `kubectl kustomize`/apply, or this generator fails on the missing file.
+secretGenerator:
+  - name: aerial-secrets
+    namespace: aerial
+    envs:
+      - secrets.env
+
+generatorOptions:
+  disableNameSuffixHash: true
+
 patches:
   - target:
       kind: Deployment

@@ -4,23 +4,13 @@ kind: Namespace
 metadata:
   name: aerial
 ---
-apiVersion: v1
-kind: Secret
-metadata:
-  name: aerial-secrets
-  namespace: aerial
-type: Opaque
-stringData:
-  POSTGRES_PASSWORD: "aerial_dev_pass_change_me"
-  JWT_SECRET: "dev-secret-change-in-production-32ch"
-  # Per-service DSNs (password is inline, hence kept in the Secret not the ConfigMap).
-  DATABASE_URL_IAM:        "postgres://aerial_admin:aerial_dev_pass_change_me@postgres.aerial.svc.cluster.local:5432/aerial?sslmode=disable&search_path=iam"
-  DATABASE_URL_SUBSCRIBER: "postgres://aerial_admin:aerial_dev_pass_change_me@postgres.aerial.svc.cluster.local:5432/aerial?sslmode=disable&search_path=subscriber"
-  DATABASE_URL_ESIM:       "postgres://aerial_admin:aerial_dev_pass_change_me@postgres.aerial.svc.cluster.local:5432/aerial?sslmode=disable&search_path=esim"
-  DATABASE_URL_PROVISION:  "postgres://aerial_admin:aerial_dev_pass_change_me@postgres.aerial.svc.cluster.local:5432/aerial?sslmode=disable&search_path=provision"
-  DATABASE_URL_RANCTL:     "postgres://aerial_admin:aerial_dev_pass_change_me@postgres.aerial.svc.cluster.local:5432/aerial?sslmode=disable&search_path=ranctl"
-  DATABASE_URL_BILLING:    "postgres://aerial_admin:aerial_dev_pass_change_me@postgres.aerial.svc.cluster.local:5432/aerial?sslmode=disable&search_path=billing"
-  DATABASE_URL_MESSAGING:  "postgres://aerial_admin:aerial_dev_pass_change_me@postgres.aerial.svc.cluster.local:5432/aerial?sslmode=disable&search_path=messaging"
+# The `aerial-secrets` Secret is NOT defined here anymore. It carried a live JWT
+# signing key and Postgres password as committed literals — credentials in git
+# history are compromised permanently. It is now produced by the kustomize
+# secretGenerator in kustomization.yaml from a gitignored `secrets.env` that
+# `make k8s-secrets` (scripts/gen-secrets.sh) generates with fresh random values.
+# See docs/CREDENTIAL_ROTATION.md — the old key/password are BURNED and must be
+# rotated anywhere they were ever deployed.
 ---
 apiVersion: v1
 kind: ConfigMap
