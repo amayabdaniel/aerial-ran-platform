@@ -57,12 +57,24 @@ type CreateSubRequest struct {
 
 // ───────── service ─────────
 
-type Service struct{ pool *pgxpool.Pool }
+// querier is the subset of *pgxpool.Pool this service calls. Declaring it as an
+// interface lets unit tests substitute a fake and exercise the error-mapping
+// branches — plan-not-found, 23505→ErrSubExists, and Cancel's RowsAffected==0 →
+// ErrSubNotFound — without a real database. The integration suite skips entirely
+// when Docker is absent, so these are the only provision tests that run on every
+// `make test-unit`. Mirrors the seam already used by svc-aerial-billing.
+type querier interface {
+	QueryRow(ctx context.Context, sql string, args ...any) pgx.Row
+	Query(ctx context.Context, sql string, args ...any) (pgx.Rows, error)
+	Exec(ctx context.Context, sql string, args ...any) (pgconn.CommandTag, error)
+}
 
-func New(pool *pgxpool.Pool) *Service { return &Service{pool: pool} }
+type Service struct{ db querier }
+
+func New(pool *pgxpool.Pool) *Service { return &Service{db: pool} }
 
 func (s *Service) ListPlans(ctx context.Context) ([]Plan, error) {
-	rows, err := s.pool.Query(ctx,
+	rows, err := s.db.Query(ctx,
 		`SELECT id, name, monthly_cents, data_cap_mb, COALESCE(description,''), created_at
 		   FROM provision.plans ORDER BY monthly_cents`)
 	if err != nil {
@@ -82,7 +94,7 @@ func (s *Service) ListPlans(ctx context.Context) ([]Plan, error) {
 
 func (s *Service) GetPlan(ctx context.Context, id string) (*Plan, error) {
 	p := &Plan{}
-	err := s.pool.QueryRow(ctx,
+	err := s.db.QueryRow(ctx,
 		`SELECT id, name, monthly_cents, data_cap_mb, COALESCE(description,''), created_at
 		   FROM provision.plans WHERE id = $1`, id,
 	).Scan(&p.ID, &p.Name, &p.MonthlyCents, &p.DataCapMB, &p.Description, &p.CreatedAt)
@@ -97,7 +109,7 @@ func (s *Service) CreateSubscription(ctx context.Context, orgID string, req Crea
 		return nil, err
 	}
 	sub := &Subscription{OrgID: orgID, UserID: req.UserID, PlanID: req.PlanID, SIMID: req.SIMID, ESIMID: req.ESIMID, Status: "active"}
-	err := s.pool.QueryRow(ctx,
+	err := s.db.QueryRow(ctx,
 		`INSERT INTO provision.subscriptions(org_id, user_id, plan_id, sim_id, esim_id, status)
 		 VALUES ($1::uuid, $2::uuid, $3, NULLIF($4,'')::uuid, NULLIF($5,'')::uuid, 'active')
 		 RETURNING id::text, started_at, created_at, updated_at`,
@@ -115,7 +127,7 @@ func (s *Service) CreateSubscription(ctx context.Context, orgID string, req Crea
 }
 
 func (s *Service) ListByOrg(ctx context.Context, orgID string) ([]Subscription, error) {
-	rows, err := s.pool.Query(ctx,
+	rows, err := s.db.Query(ctx,
 		`SELECT id::text, org_id::text, user_id::text, plan_id, sim_id::text, esim_id::text, status,
 		        started_at, cancelled_at, created_at, updated_at
 		   FROM provision.subscriptions WHERE org_id = $1::uuid ORDER BY created_at DESC LIMIT 200`, orgID)
@@ -141,7 +153,7 @@ func (s *Service) ListByOrg(ctx context.Context, orgID string) ([]Subscription, 
 // matches nothing, so RowsAffected()==0 → ErrSubNotFound (a 404 that does not
 // confirm the subscription exists under another tenant). Empty orgID fails closed.
 func (s *Service) Cancel(ctx context.Context, orgID, id string) error {
-	res, err := s.pool.Exec(ctx,
+	res, err := s.db.Exec(ctx,
 		`UPDATE provision.subscriptions SET status='cancelled', cancelled_at=now(), updated_at=now()
 		   WHERE id=$1::uuid AND org_id=$2::uuid AND status<>'cancelled'`, id, orgID)
 	if err != nil {
