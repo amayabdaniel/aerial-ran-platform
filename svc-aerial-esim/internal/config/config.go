@@ -4,6 +4,8 @@ package config
 import (
 	"fmt"
 	"os"
+
+	"github.com/amayabdaniel/aerial-ran-platform/lib-aerial-go/runner"
 )
 
 type Config struct {
@@ -23,14 +25,14 @@ type Config struct {
 
 func Load() (*Config, error) {
 	c := &Config{
-		Port:               envOr("PORT", "8083"),
-		DatabaseURL:        envOr("DATABASE_URL", "postgres://aerial_admin:aerial_dev_pass_change_me@localhost:15432/aerial?sslmode=disable&search_path=esim"),
-		JWTSecret:          envOr("JWT_SECRET", "dev-secret-change-in-production-32ch"),
-		JWTIssuer:          envOr("JWT_ISSUER", "aerial-ran-platform"),
-		JWTAudience:        envOr("JWT_AUDIENCE", "aerial-clients"),
+		Port:               runner.EnvOr("PORT", "8083"),
+		DatabaseURL:        runner.EnvOr("DATABASE_URL", "postgres://aerial_admin:aerial_dev_pass_change_me@localhost:15432/aerial?sslmode=disable&search_path=esim"),
+		JWTSecret:          runner.EnvOr("JWT_SECRET", "dev-secret-change-in-production-32ch"),
+		JWTIssuer:          runner.EnvOr("JWT_ISSUER", "aerial-ran-platform"),
+		JWTAudience:        runner.EnvOr("JWT_AUDIENCE", "aerial-clients"),
 		OTelEndpoint:       os.Getenv("OTEL_EXPORTER_OTLP_ENDPOINT"),
-		CORSOrigins:        envOr("ALLOWED_ORIGINS", "http://localhost:3000,http://localhost:8080"),
-		AiraloBaseURL:      envOr("AIRALO_BASE_URL", "https://sandbox-partners-api.airalo.com"),
+		CORSOrigins:        runner.EnvOr("ALLOWED_ORIGINS", "http://localhost:3000,http://localhost:8080"),
+		AiraloBaseURL:      runner.EnvOr("AIRALO_BASE_URL", "https://sandbox-partners-api.airalo.com"),
 		AiraloClientID:     os.Getenv("AIRALO_CLIENT_ID"),
 		AiraloClientSecret: os.Getenv("AIRALO_CLIENT_SECRET"),
 	}
@@ -38,11 +40,4 @@ func Load() (*Config, error) {
 		return nil, fmt.Errorf("JWT_SECRET must be at least 16 chars")
 	}
 	return c, nil
-}
-
-func envOr(k, def string) string {
-	if v := os.Getenv(k); v != "" {
-		return v
-	}
-	return def
 }

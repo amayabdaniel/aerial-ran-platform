@@ -4,6 +4,8 @@ package config
 import (
 	"fmt"
 	"os"
+
+	"github.com/amayabdaniel/aerial-ran-platform/lib-aerial-go/runner"
 )
 
 type Config struct {
@@ -22,27 +24,20 @@ type Config struct {
 
 func Load() (*Config, error) {
 	c := &Config{
-		Port:         envOr("PORT", "8082"),
-		DatabaseURL:  envOr("DATABASE_URL", "postgres://aerial_admin:aerial_dev_pass_change_me@localhost:15432/aerial?sslmode=disable&search_path=subscriber"),
-		JWTSecret:    envOr("JWT_SECRET", "dev-secret-change-in-production-32ch"),
-		JWTIssuer:    envOr("JWT_ISSUER", "aerial-ran-platform"),
-		JWTAudience:  envOr("JWT_AUDIENCE", "aerial-clients"),
+		Port:         runner.EnvOr("PORT", "8082"),
+		DatabaseURL:  runner.EnvOr("DATABASE_URL", "postgres://aerial_admin:aerial_dev_pass_change_me@localhost:15432/aerial?sslmode=disable&search_path=subscriber"),
+		JWTSecret:    runner.EnvOr("JWT_SECRET", "dev-secret-change-in-production-32ch"),
+		JWTIssuer:    runner.EnvOr("JWT_ISSUER", "aerial-ran-platform"),
+		JWTAudience:  runner.EnvOr("JWT_AUDIENCE", "aerial-clients"),
 		OTelEndpoint: os.Getenv("OTEL_EXPORTER_OTLP_ENDPOINT"),
-		OpenMongoURI: envOr("OPEN5GS_MONGO_URI", "mongodb://localhost:27017"),
-		OpenMongoDB:  envOr("OPEN5GS_MONGO_DB", "open5gs"),
-		PLMNMcc:      envOr("PLMN_MCC", "999"),
-		PLMNMnc:      envOr("PLMN_MNC", "70"),
-		CORSOrigins:  envOr("ALLOWED_ORIGINS", "http://localhost:3000,http://localhost:8080"),
+		OpenMongoURI: runner.EnvOr("OPEN5GS_MONGO_URI", "mongodb://localhost:27017"),
+		OpenMongoDB:  runner.EnvOr("OPEN5GS_MONGO_DB", "open5gs"),
+		PLMNMcc:      runner.EnvOr("PLMN_MCC", "999"),
+		PLMNMnc:      runner.EnvOr("PLMN_MNC", "70"),
+		CORSOrigins:  runner.EnvOr("ALLOWED_ORIGINS", "http://localhost:3000,http://localhost:8080"),
 	}
 	if len(c.JWTSecret) < 16 {
 		return nil, fmt.Errorf("JWT_SECRET must be at least 16 chars")
 	}
 	return c, nil
-}
-
-func envOr(k, def string) string {
-	if v := os.Getenv(k); v != "" {
-		return v
-	}
-	return def
 }

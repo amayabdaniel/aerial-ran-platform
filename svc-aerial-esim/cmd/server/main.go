@@ -6,18 +6,9 @@ import (
 	"log/slog"
 	"net/http"
 	"os"
-	"os/signal"
-	"strings"
-	"syscall"
-	"time"
 
-	"github.com/amayabdaniel/aerial-ran-platform/lib-aerial-go/bodylimit"
-	healthlib "github.com/amayabdaniel/aerial-ran-platform/lib-aerial-go/health"
-	"github.com/amayabdaniel/aerial-ran-platform/lib-aerial-go/httplog"
 	jwtlib "github.com/amayabdaniel/aerial-ran-platform/lib-aerial-go/jwt"
-	"github.com/amayabdaniel/aerial-ran-platform/lib-aerial-go/metrics"
-	recoverlib "github.com/amayabdaniel/aerial-ran-platform/lib-aerial-go/recover"
-	"github.com/amayabdaniel/aerial-ran-platform/lib-aerial-go/tracing"
+	"github.com/amayabdaniel/aerial-ran-platform/lib-aerial-go/runner"
 	"github.com/amayabdaniel/aerial-ran-platform/svc-aerial-esim/internal/config"
 	"github.com/amayabdaniel/aerial-ran-platform/svc-aerial-esim/internal/handler"
 	"github.com/amayabdaniel/aerial-ran-platform/svc-aerial-esim/internal/provider"
@@ -26,133 +17,38 @@ import (
 	"github.com/jackc/pgx/v5/pgxpool"
 )
 
-const serviceName = "svc-aerial-esim"
-
 func main() {
-	slog.SetDefault(slog.New(slog.NewJSONHandler(os.Stdout, &slog.HandlerOptions{Level: slog.LevelInfo})))
-	logger := slog.Default()
-
 	cfg, err := config.Load()
 	if err != nil {
-		logger.Error("config", "err", err)
+		slog.Error("config", "err", err)
 		os.Exit(1)
 	}
 
-	ctx, stop := signal.NotifyContext(context.Background(), os.Interrupt, syscall.SIGTERM)
-	defer stop()
+	runner.Run(runner.Opts{
+		ServiceName:  "svc-aerial-esim",
+		Port:         cfg.Port,
+		DatabaseURL:  cfg.DatabaseURL,
+		JWTSecret:    cfg.JWTSecret,
+		JWTIssuer:    cfg.JWTIssuer,
+		JWTAudience:  cfg.JWTAudience,
+		OTelEndpoint: cfg.OTelEndpoint,
+		CORSOrigins:  cfg.CORSOrigins,
+		Mount: func(_ context.Context, mux *http.ServeMux, pool *pgxpool.Pool, _ *jwtlib.Issuer) {
+			svc := service.New(repository.New(pool), selectProvider(cfg))
+			handler.New(svc).Mount(mux)
+		},
+	})
+}
 
-	shutdownTracer, err := tracing.Setup(ctx, serviceName, cfg.OTelEndpoint)
-	if err != nil {
-		logger.Warn("tracing setup failed", "err", err)
-	}
-	defer func() { _ = shutdownTracer(context.Background()) }()
-
-	pool, err := pgxpool.New(ctx, cfg.DatabaseURL)
-	if err != nil {
-		logger.Error("pgx pool", "err", err)
-		os.Exit(1)
-	}
-	defer pool.Close()
-	metrics.RegisterDBPool(serviceName, func() metrics.DBPoolStats { return pool.Stat() })
-
-	// Provider selection: real Airalo when both credentials are set, else mock.
-	var prov provider.Provider
+// selectProvider returns the real Airalo client when both credentials are set,
+// otherwise the mock, logging which was chosen.
+func selectProvider(cfg *config.Config) provider.Provider {
 	if cfg.AiraloClientID != "" && cfg.AiraloClientSecret != "" {
-		prov = provider.NewAiralo(cfg.AiraloBaseURL, cfg.AiraloClientID, cfg.AiraloClientSecret)
-		logger.Info("provider", "name", prov.Name(), "base_url", cfg.AiraloBaseURL)
-	} else {
-		prov = provider.NewMock()
-		logger.Warn("provider", "name", prov.Name(), "reason", "AIRALO_CLIENT_ID/SECRET not set; using mock")
+		p := provider.NewAiralo(cfg.AiraloBaseURL, cfg.AiraloClientID, cfg.AiraloClientSecret)
+		slog.Info("provider", "name", p.Name(), "base_url", cfg.AiraloBaseURL)
+		return p
 	}
-
-	repo := repository.New(pool)
-	svc := service.New(repo, prov)
-	h := handler.New(svc)
-	issuer := jwtlib.New(cfg.JWTSecret, cfg.JWTIssuer, cfg.JWTAudience, 15*time.Minute)
-
-	checker := &healthlib.Checker{}
-	checker.Start(ctx, 5*time.Second, func(c context.Context) error { return pool.Ping(c) })
-
-	mux := http.NewServeMux()
-	mux.Handle("/metrics", metrics.Handler())
-	mux.Handle("/v1/health", checker.Handler())
-	mux.Handle("/v1/ready", checker.Handler())
-	h.Mount(mux)
-
-	authMW := issuer.Middleware("/metrics", "/v1/health", "/v1/ready")
-	stack := newHandler(logger, cfg.CORSOrigins, authMW, mux)
-
-	srv := &http.Server{
-		Addr:              ":" + cfg.Port,
-		Handler:           stack,
-		ReadHeaderTimeout: 5 * time.Second,
-		ReadTimeout:       15 * time.Second,
-		WriteTimeout:      15 * time.Second,
-		IdleTimeout:       60 * time.Second,
-	}
-
-	go func() {
-		logger.Info("listen", "service", serviceName, "addr", srv.Addr, "provider", prov.Name())
-		if err := srv.ListenAndServe(); err != nil && err != http.ErrServerClosed {
-			logger.Error("listen", "err", err)
-			os.Exit(1)
-		}
-	}()
-
-	<-ctx.Done()
-	logger.Info("shutting down")
-	shCtx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
-	defer cancel()
-	_ = srv.Shutdown(shCtx)
-}
-
-// newHandler composes the service's middleware chain around mux. It is a named
-// function rather than inline in main so a test can drive the real stack and
-// prove the request-body limit is enforced (see main_test.go). The body limit
-// is the innermost wrapper, matching the runner-based services.
-func newHandler(logger *slog.Logger, corsOrigins string, authMW func(http.Handler) http.Handler, mux http.Handler) http.Handler {
-	return chain(
-		recoverlib.Middleware(logger),
-		metrics.Middleware(serviceName),
-		corsMW(corsOrigins),
-		httplog.Middleware(logger),
-		authMW,
-		bodylimit.Middleware(bodylimit.DefaultMaxBytes),
-	)(mux)
-}
-
-func chain(mws ...func(http.Handler) http.Handler) func(http.Handler) http.Handler {
-	return func(h http.Handler) http.Handler {
-		for i := len(mws) - 1; i >= 0; i-- {
-			h = mws[i](h)
-		}
-		return h
-	}
-}
-
-func corsMW(originsCSV string) func(http.Handler) http.Handler {
-	origins := map[string]struct{}{}
-	for _, o := range strings.Split(originsCSV, ",") {
-		o = strings.TrimSpace(o)
-		if o != "" {
-			origins[o] = struct{}{}
-		}
-	}
-	return func(next http.Handler) http.Handler {
-		return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-			origin := r.Header.Get("Origin")
-			if _, ok := origins[origin]; ok {
-				w.Header().Set("Access-Control-Allow-Origin", origin)
-				w.Header().Set("Access-Control-Allow-Credentials", "true")
-				w.Header().Set("Access-Control-Allow-Methods", "GET, POST, DELETE, OPTIONS")
-				w.Header().Set("Access-Control-Allow-Headers", "Authorization, Content-Type, X-Device-ID")
-				w.Header().Set("Access-Control-Max-Age", "600")
-			}
-			if r.Method == http.MethodOptions {
-				w.WriteHeader(http.StatusNoContent)
-				return
-			}
-			next.ServeHTTP(w, r)
-		})
-	}
+	p := provider.NewMock()
+	slog.Warn("provider", "name", p.Name(), "reason", "AIRALO_CLIENT_ID/SECRET not set; using mock")
+	return p
 }

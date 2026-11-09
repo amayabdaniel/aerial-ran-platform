@@ -32,6 +32,15 @@ type Opts struct {
 	JWTAudience  string
 	OTelEndpoint string
 	CORSOrigins  string
+	// AccessTokenTTL is the access-token lifetime the JWT issuer signs with.
+	// Zero means the historical 15m default (see accessTTL). Only iam, which
+	// actually issues tokens, needs to set it (from cfg.AccessTokenTTL); the
+	// verify-only services leave it unset.
+	AccessTokenTTL time.Duration
+	// AuthSkipPaths are service-specific paths the auth middleware must not
+	// guard, in addition to the always-public /metrics, /v1/health, /v1/ready.
+	// iam adds its public /v1/auth/* endpoints here.
+	AuthSkipPaths []string
 	// Mount is called after pgxpool is ready; mount your handlers on mux.
 	Mount func(ctx context.Context, mux *http.ServeMux, pool *pgxpool.Pool, jwt *jwtlib.Issuer)
 }
@@ -58,7 +67,7 @@ func Run(opts Opts) {
 	defer pool.Close()
 	metrics.RegisterDBPool(opts.ServiceName, func() metrics.DBPoolStats { return pool.Stat() })
 
-	issuer := jwtlib.New(opts.JWTSecret, opts.JWTIssuer, opts.JWTAudience, 15*time.Minute)
+	issuer := buildIssuer(opts)
 
 	checker := &healthlib.Checker{}
 	checker.Start(ctx, 5*time.Second, func(c context.Context) error { return pool.Ping(c) })
@@ -72,15 +81,8 @@ func Run(opts Opts) {
 		opts.Mount(ctx, mux, pool, issuer)
 	}
 
-	authMW := issuer.Middleware("/metrics", "/v1/health", "/v1/ready")
-	stack := chain(
-		recoverlib.Middleware(logger),
-		metrics.Middleware(opts.ServiceName),
-		corsMW(opts.CORSOrigins),
-		httplog.Middleware(logger),
-		authMW,
-		bodylimit.Middleware(bodylimit.DefaultMaxBytes),
-	)(mux)
+	authMW := issuer.Middleware(authSkipPaths(opts)...)
+	stack := Handler(logger, opts.ServiceName, opts.CORSOrigins, authMW, mux)
 
 	srv := &http.Server{
 		Addr:              ":" + opts.Port,
@@ -113,6 +115,55 @@ func chain(mws ...func(http.Handler) http.Handler) func(http.Handler) http.Handl
 		}
 		return h
 	}
+}
+
+// defaultAccessTTL is the access-token lifetime used when Opts.AccessTokenTTL is
+// unset — the value every runner-based service signed with before iam's TTL was
+// threaded through Opts.
+const defaultAccessTTL = 15 * time.Minute
+
+// accessTTL resolves the access-token lifetime: the configured value, or the
+// historical 15m default when unset. Kept separate from buildIssuer so the
+// default is unit-testable and so the TTL wiring is a single, mutable call site.
+func accessTTL(opts Opts) time.Duration {
+	if opts.AccessTokenTTL <= 0 {
+		return defaultAccessTTL
+	}
+	return opts.AccessTokenTTL
+}
+
+// buildIssuer constructs the JWT issuer exactly as Run does. Run and the TTL
+// equivalence test both go through this function, so any change to the TTL
+// wiring (e.g. reverting to a hardcoded 15m) is caught by the test rather than
+// silently logging real users out early. See runner_test.go.
+func buildIssuer(opts Opts) *jwtlib.Issuer {
+	return jwtlib.New(opts.JWTSecret, opts.JWTIssuer, opts.JWTAudience, accessTTL(opts))
+}
+
+// authSkipPaths is the effective set of paths the auth middleware leaves
+// unguarded: the three always-public endpoints followed by any service-specific
+// additions. A fresh slice is returned each call so the standard set cannot be
+// mutated by a caller. iam passes its public /v1/auth/* endpoints via
+// Opts.AuthSkipPaths, yielding its historical seven-path set.
+func authSkipPaths(opts Opts) []string {
+	paths := []string{"/metrics", "/v1/health", "/v1/ready"}
+	return append(paths, opts.AuthSkipPaths...)
+}
+
+// Handler assembles the standard middleware chain around mux:
+// recover → metrics → cors → httplog → auth → bodyLimit → handler. It is
+// exported so each service's cmd/server test can drive the real stack and prove
+// the request-body limit is enforced; Run uses it too, so the body limit cannot
+// be dropped here without those tests failing.
+func Handler(logger *slog.Logger, serviceName, corsOrigins string, authMW func(http.Handler) http.Handler, mux http.Handler) http.Handler {
+	return chain(
+		recoverlib.Middleware(logger),
+		metrics.Middleware(serviceName),
+		corsMW(corsOrigins),
+		httplog.Middleware(logger),
+		authMW,
+		bodylimit.Middleware(bodylimit.DefaultMaxBytes),
+	)(mux)
 }
 
 func corsMW(originsCSV string) func(http.Handler) http.Handler {

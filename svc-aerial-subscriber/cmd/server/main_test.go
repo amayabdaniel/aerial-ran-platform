@@ -9,13 +9,15 @@ import (
 	"testing"
 
 	"github.com/amayabdaniel/aerial-ran-platform/lib-aerial-go/bodylimit"
+	"github.com/amayabdaniel/aerial-ran-platform/lib-aerial-go/runner"
 )
 
 // A request body over the limit must be rejected and one under it accepted.
-// This drives the service's real newHandler stack rather than a rebuilt copy,
-// so deleting the bodylimit middleware from newHandler makes this fail — the
-// wiring-vs-behavior distinction. iam/esim/subscriber hand-roll their chain and
-// once shipped with no request-body limit at all; this guards against a repeat.
+// This drives the real assembled stack via runner.Handler, so dropping the
+// bodylimit middleware from that chain makes this fail — the wiring-vs-behavior
+// distinction. iam/esim/subscriber once hand-rolled their own chains and shipped
+// with no request-body limit at all; they now share runner.Handler, and this
+// per-service test is the regression net that the shared limit stays wired.
 func TestBodyLimitEnforced(t *testing.T) {
 	discard := slog.New(slog.NewTextHandler(io.Discard, nil))
 	passthroughAuth := func(h http.Handler) http.Handler { return h }
@@ -28,7 +30,7 @@ func TestBodyLimitEnforced(t *testing.T) {
 		}
 		w.WriteHeader(http.StatusOK)
 	})
-	stack := newHandler(discard, "", passthroughAuth, mux)
+	stack := runner.Handler(discard, "svc-aerial-subscriber", "", passthroughAuth, mux)
 
 	// Under the limit: accepted.
 	underRec := httptest.NewRecorder()
