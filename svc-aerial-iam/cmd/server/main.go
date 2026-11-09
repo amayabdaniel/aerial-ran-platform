@@ -11,6 +11,7 @@ import (
 	"syscall"
 	"time"
 
+	"github.com/amayabdaniel/aerial-ran-platform/lib-aerial-go/bodylimit"
 	healthlib "github.com/amayabdaniel/aerial-ran-platform/lib-aerial-go/health"
 	"github.com/amayabdaniel/aerial-ran-platform/lib-aerial-go/httplog"
 	jwtlib "github.com/amayabdaniel/aerial-ran-platform/lib-aerial-go/jwt"
@@ -78,13 +79,7 @@ func main() {
 		"/v1/auth/logout",
 	)
 
-	handlerStack := chain(
-		recoverlib.Middleware(logger),
-		metrics.Middleware(serviceName),
-		corsMW(cfg.CORSOrigins),
-		httplog.Middleware(logger),
-		authMW,
-	)(mux)
+	handlerStack := newHandler(logger, cfg.CORSOrigins, authMW, mux)
 
 	srv := &http.Server{
 		Addr:              ":" + cfg.Port,
@@ -108,6 +103,21 @@ func main() {
 	shutdownCtx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
 	defer cancel()
 	_ = srv.Shutdown(shutdownCtx)
+}
+
+// newHandler composes the service's middleware chain around mux. It is a named
+// function rather than inline in main so a test can drive the real stack and
+// prove the request-body limit is enforced (see main_test.go). The body limit
+// is the innermost wrapper, matching the runner-based services.
+func newHandler(logger *slog.Logger, corsOrigins string, authMW func(http.Handler) http.Handler, mux http.Handler) http.Handler {
+	return chain(
+		recoverlib.Middleware(logger),
+		metrics.Middleware(serviceName),
+		corsMW(corsOrigins),
+		httplog.Middleware(logger),
+		authMW,
+		bodylimit.Middleware(bodylimit.DefaultMaxBytes),
+	)(mux)
 }
 
 func chain(mws ...func(http.Handler) http.Handler) func(http.Handler) http.Handler {
