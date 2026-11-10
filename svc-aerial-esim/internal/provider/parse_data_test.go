@@ -14,12 +14,12 @@ func TestParseDataMB(t *testing.T) {
 	}{
 		{"5 GB", 5120, false},
 		{"500 MB", 500, false},
-		{"5GB", 5120, false},     // no space
-		{"500MB", 500, false},    // no space
+		{"5GB", 5120, false},  // no space
+		{"500MB", 500, false}, // no space
 		{"1 TB", 1024 * 1024, false},
 		{"1.5 GB", 1536, false},
-		{"10 KB", 0, false},      // rounds down to 0 MB but parses cleanly
-		{"0 GB", 0, false},       // a REAL zero — must NOT be an error
+		{"10 KB", 0, false}, // rounds down to 0 MB but parses cleanly
+		{"0 GB", 0, false},  // a REAL zero — must NOT be an error
 		{"unlimited", DataUnlimited, false},
 		{"Unlimited", DataUnlimited, false},
 		{"  5 GB  ", 5120, false}, // surrounding space trimmed
