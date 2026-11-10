@@ -6,7 +6,7 @@ import (
 	"os"
 	"time"
 
-	"github.com/amayabdaniel/aerial-ran-platform/lib-aerial-go/runner"
+	"github.com/amayabdaniel/aerial-ran-platform/lib-aerial-go/env"
 )
 
 // Config is everything the service needs at boot.
@@ -25,19 +25,19 @@ type Config struct {
 // Load reads from env. Returns an error only on truly invalid input.
 func Load() (*Config, error) {
 	c := &Config{
-		Port:         runner.EnvOr("PORT", "8081"),
-		DatabaseURL:  runner.EnvOr("DATABASE_URL", "postgres://aerial_admin:aerial_dev_pass_change_me@localhost:15432/aerial?sslmode=disable&search_path=iam"),
-		JWTSecret:    runner.EnvOr("JWT_SECRET", "dev-secret-change-in-production-32ch"),
-		JWTIssuer:    runner.EnvOr("JWT_ISSUER", "aerial-ran-platform"),
-		JWTAudience:  runner.EnvOr("JWT_AUDIENCE", "aerial-clients"),
+		Port:         env.Or("PORT", "8081"),
+		DatabaseURL:  env.Or("DATABASE_URL", "postgres://aerial_admin:aerial_dev_pass_change_me@localhost:15432/aerial?sslmode=disable&search_path=iam"),
+		JWTSecret:    env.Or("JWT_SECRET", "dev-secret-change-in-production-32ch"),
+		JWTIssuer:    env.Or("JWT_ISSUER", "aerial-ran-platform"),
+		JWTAudience:  env.Or("JWT_AUDIENCE", "aerial-clients"),
 		OTelEndpoint: os.Getenv("OTEL_EXPORTER_OTLP_ENDPOINT"),
-		CORSOrigins:  runner.EnvOr("ALLOWED_ORIGINS", "http://localhost:3000,http://localhost:8080"),
+		CORSOrigins:  env.Or("ALLOWED_ORIGINS", "http://localhost:3000,http://localhost:8080"),
 	}
 	var err error
-	if c.AccessTokenTTL, err = time.ParseDuration(runner.EnvOr("JWT_ACCESS_TTL", "15m")); err != nil {
+	if c.AccessTokenTTL, err = time.ParseDuration(env.Or("JWT_ACCESS_TTL", "15m")); err != nil {
 		return nil, fmt.Errorf("JWT_ACCESS_TTL: %w", err)
 	}
-	if c.RefreshTokenTTL, err = time.ParseDuration(runner.EnvOr("JWT_REFRESH_TTL", "720h")); err != nil {
+	if c.RefreshTokenTTL, err = time.ParseDuration(env.Or("JWT_REFRESH_TTL", "720h")); err != nil {
 		return nil, fmt.Errorf("JWT_REFRESH_TTL: %w", err)
 	}
 	if len(c.JWTSecret) < 16 {

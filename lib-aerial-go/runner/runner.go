@@ -192,11 +192,3 @@ func corsMW(originsCSV string) func(http.Handler) http.Handler {
 		})
 	}
 }
-
-// EnvOr returns env(k) or def.
-func EnvOr(k, def string) string {
-	if v := os.Getenv(k); v != "" {
-		return v
-	}
-	return def
-}

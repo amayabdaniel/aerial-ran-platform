@@ -7,6 +7,7 @@ import (
 	"net/http"
 	"os"
 
+	"github.com/amayabdaniel/aerial-ran-platform/lib-aerial-go/env"
 	jwtlib "github.com/amayabdaniel/aerial-ran-platform/lib-aerial-go/jwt"
 	"github.com/amayabdaniel/aerial-ran-platform/lib-aerial-go/runner"
 	"github.com/amayabdaniel/aerial-ran-platform/svc-aerial-messaging/internal/messaging"
@@ -14,17 +15,17 @@ import (
 )
 
 func main() {
-	natsURL := runner.EnvOr("NATS_URL", "nats://localhost:14222")
-	allowedOrigins := runner.EnvOr("ALLOWED_ORIGINS", "http://localhost:3000,http://localhost:8080")
+	natsURL := env.Or("NATS_URL", "nats://localhost:14222")
+	allowedOrigins := env.Or("ALLOWED_ORIGINS", "http://localhost:3000,http://localhost:8080")
 	runner.Run(runner.Opts{
 		ServiceName:  "svc-aerial-messaging",
-		Port:         runner.EnvOr("PORT", "8087"),
-		DatabaseURL:  runner.EnvOr("DATABASE_URL", "postgres://aerial_admin:aerial_dev_pass_change_me@localhost:15432/aerial?sslmode=disable&search_path=messaging"),
-		JWTSecret:    runner.EnvOr("JWT_SECRET", "dev-secret-change-in-production-32ch"),
-		JWTIssuer:    runner.EnvOr("JWT_ISSUER", "aerial-ran-platform"),
-		JWTAudience:  runner.EnvOr("JWT_AUDIENCE", "aerial-clients"),
-		OTelEndpoint: runner.EnvOr("OTEL_EXPORTER_OTLP_ENDPOINT", ""),
-		CORSOrigins:  runner.EnvOr("ALLOWED_ORIGINS", "http://localhost:3000,http://localhost:8080"),
+		Port:         env.Or("PORT", "8087"),
+		DatabaseURL:  env.Or("DATABASE_URL", "postgres://aerial_admin:aerial_dev_pass_change_me@localhost:15432/aerial?sslmode=disable&search_path=messaging"),
+		JWTSecret:    env.Or("JWT_SECRET", "dev-secret-change-in-production-32ch"),
+		JWTIssuer:    env.Or("JWT_ISSUER", "aerial-ran-platform"),
+		JWTAudience:  env.Or("JWT_AUDIENCE", "aerial-clients"),
+		OTelEndpoint: env.Or("OTEL_EXPORTER_OTLP_ENDPOINT", ""),
+		CORSOrigins:  env.Or("ALLOWED_ORIGINS", "http://localhost:3000,http://localhost:8080"),
 		Mount: func(ctx context.Context, mux *http.ServeMux, pool *pgxpool.Pool, _ *jwtlib.Issuer) {
 			svc, err := messaging.New(ctx, pool, natsURL)
 			if err != nil {
