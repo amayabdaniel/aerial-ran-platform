@@ -16,6 +16,11 @@ import (
 
 func main() {
 	natsURL := env.Or("NATS_URL", "nats://localhost:14222")
+	// allowedOrigins is the single source of trusted web origins for this
+	// service. It feeds BOTH the CORS middleware allowlist (CORSOrigins below)
+	// and the WebSocket Origin allowlist that guards against cross-site
+	// WebSocket hijacking (OriginHostsFromCSV in Mount). Reading ALLOWED_ORIGINS
+	// exactly once keeps those two allowlists from silently drifting apart.
 	allowedOrigins := env.Or("ALLOWED_ORIGINS", "http://localhost:3000,http://localhost:8080")
 	runner.Run(runner.Opts{
 		ServiceName:  "svc-aerial-messaging",
@@ -25,7 +30,7 @@ func main() {
 		JWTIssuer:    env.Or("JWT_ISSUER", "aerial-ran-platform"),
 		JWTAudience:  env.Or("JWT_AUDIENCE", "aerial-clients"),
 		OTelEndpoint: env.Or("OTEL_EXPORTER_OTLP_ENDPOINT", ""),
-		CORSOrigins:  env.Or("ALLOWED_ORIGINS", "http://localhost:3000,http://localhost:8080"),
+		CORSOrigins:  allowedOrigins,
 		Mount: func(ctx context.Context, mux *http.ServeMux, pool *pgxpool.Pool, _ *jwtlib.Issuer) {
 			svc, err := messaging.New(ctx, pool, natsURL)
 			if err != nil {
