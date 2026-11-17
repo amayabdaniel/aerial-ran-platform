@@ -273,6 +273,3 @@ func ParseNFList(csv string) map[string]string {
 	}
 	return out
 }
-
-// silence unused encoding/json on builds with no struct decoding (helper kept).
-var _ = json.Marshal

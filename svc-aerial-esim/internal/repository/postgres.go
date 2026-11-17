@@ -4,7 +4,6 @@ package repository
 import (
 	"context"
 	"errors"
-	"time"
 
 	"github.com/amayabdaniel/aerial-ran-platform/svc-aerial-esim/internal/model"
 	"github.com/jackc/pgx/v5"
@@ -176,6 +175,3 @@ func derefInt(p *int) int {
 	}
 	return *p
 }
-
-// quiet unused imports if helpers are skipped
-var _ = time.Second
