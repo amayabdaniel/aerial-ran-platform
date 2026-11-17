@@ -4,6 +4,7 @@ package runner
 
 import (
 	"context"
+	"fmt"
 	"log/slog"
 	"net/http"
 	"os"
@@ -49,6 +50,17 @@ type Opts struct {
 func Run(opts Opts) {
 	slog.SetDefault(slog.New(slog.NewJSONHandler(os.Stdout, &slog.HandlerOptions{Level: slog.LevelInfo})))
 	logger := slog.Default()
+
+	// Refuse to boot on a signing key too short to be a safe HS256 secret. This is
+	// the one seam every service's JWT_SECRET passes through, so the floor the
+	// config-package services enforced individually now covers the inline ones too.
+	// os.Exit(1) rather than panic is safe here: nothing is deferred yet (stop(),
+	// the tracer shutdown and pool.Close() are all registered below), so there is
+	// no cleanup to skip — the same fail-fast as the pgxpool error further down.
+	if err := validateSecret(opts.JWTSecret); err != nil {
+		logger.Error("invalid JWT_SECRET", "err", err)
+		os.Exit(1)
+	}
 
 	ctx, stop := signal.NotifyContext(context.Background(), os.Interrupt, syscall.SIGTERM)
 	defer stop()
@@ -130,6 +142,27 @@ func accessTTL(opts Opts) time.Duration {
 		return defaultAccessTTL
 	}
 	return opts.AccessTokenTTL
+}
+
+// minJWTSecretLen is the shortest HS256 signing key runner will boot with. It is
+// 16 — the same floor the three config-package services (esim, iam, subscriber)
+// each enforced in their own Load() with `len(JWTSecret) < 16`. This seam adopts
+// that existing bound; it does not loosen or tighten it. billing, provision,
+// ran-control and messaging read JWT_SECRET inline and enforced nothing, so a
+// too-short key silently signed and verified real tokens there; validating at the
+// one seam every service passes through means the floor can no longer be skipped
+// by a service that doesn't use a config package. The 32-char dev default clears
+// it, so every service still boots unchanged at the default.
+const minJWTSecretLen = 16
+
+// validateSecret rejects a JWT signing key shorter than minJWTSecretLen. The
+// message matches the one the config packages already return so the boot-time
+// failure reads identically wherever it fires.
+func validateSecret(secret string) error {
+	if len(secret) < minJWTSecretLen {
+		return fmt.Errorf("JWT_SECRET must be at least %d chars", minJWTSecretLen)
+	}
+	return nil
 }
 
 // buildIssuer constructs the JWT issuer exactly as Run does. Run and the TTL

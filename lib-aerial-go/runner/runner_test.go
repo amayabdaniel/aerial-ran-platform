@@ -7,6 +7,7 @@ import (
 	"net/http"
 	"net/http/httptest"
 	"slices"
+	"strings"
 	"testing"
 	"time"
 
@@ -94,6 +95,39 @@ func TestAuthSkipPaths(t *testing.T) {
 	}
 	if len(iam) != 7 {
 		t.Fatalf("iam skip set has %d paths, want exactly 7", len(iam))
+	}
+}
+
+// TestValidateSecretFloor is the gate on the JWT-secret length floor. Three
+// services (esim, iam, subscriber) enforced len(JWT_SECRET) >= 16 in their own
+// config.Load; billing, provision, ran-control and messaging read JWT_SECRET
+// inline and enforced nothing, so a short key signed real HS256 tokens there
+// undetected. The floor now lives at the single runner seam all seven boot
+// through. A 15-char key must be rejected, a 16-char key accepted, and a 32-char
+// key (the length of the dev default every service ships with) must clear it so
+// every service boots unchanged.
+//
+// This exercises validateSecret directly. That Run itself refuses to boot on a
+// short secret — it calls validateSecret before buildIssuer and os.Exit(1)s on
+// error — is verified by reading Run, not by this test: Run blocks on a live
+// server and calls os.Exit, so it is not reachable in a unit test. What is under
+// test here is the floor's logic, not the Run wiring.
+//
+// The accepted cases assert by LENGTH, not by the literal dev secret, so this
+// test survives the rotation of that secret (one of Daniel's open rotation items)
+// without a behavioural reason to edit it.
+func TestValidateSecretFloor(t *testing.T) {
+	if err := validateSecret(strings.Repeat("x", minJWTSecretLen-1)); err == nil {
+		t.Fatalf("15-char secret: want rejection, got nil — a short HS256 key would sign real tokens")
+	}
+	if err := validateSecret(""); err == nil {
+		t.Fatalf("empty secret: want rejection, got nil")
+	}
+	if err := validateSecret(strings.Repeat("x", minJWTSecretLen)); err != nil {
+		t.Fatalf("16-char secret: want accepted, got %v", err)
+	}
+	if err := validateSecret(strings.Repeat("x", 32)); err != nil {
+		t.Fatalf("32-char secret: want accepted so all seven services boot, got %v", err)
 	}
 }
 
