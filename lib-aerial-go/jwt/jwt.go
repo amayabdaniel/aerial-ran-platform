@@ -31,6 +31,21 @@ type Issuer struct {
 	ttl      time.Duration
 }
 
+// DefaultIssuer and DefaultAudience are the iss/aud claims every aerial service
+// falls back to when JWT_ISSUER / JWT_AUDIENCE are unset. They live here, the one
+// package where both claims are produced and checked (Sign writes them; Verify
+// requires them via WithIssuer/WithAudience), so the services cannot drift to
+// different defaults. The invariant is cross-service and silent if broken: iam
+// signs tokens with these two values and the other six services verify against
+// them, so a service whose default diverged would reject every cross-service
+// token with a 401 while the rest kept working, and no test spans the seven mains
+// to catch it. Override via env in lockstep across all services, or not at all;
+// do not hardcode either string at a call site again.
+const (
+	DefaultIssuer   = "aerial-ran-platform"
+	DefaultAudience = "aerial-clients"
+)
+
 // New returns an Issuer. ttl is the access token lifetime.
 func New(secret, issuer, audience string, ttl time.Duration) *Issuer {
 	return &Issuer{secret: []byte(secret), issuer: issuer, audience: audience, ttl: ttl}

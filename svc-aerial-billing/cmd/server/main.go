@@ -18,8 +18,8 @@ func main() {
 		Port:         env.Or("PORT", "8086"),
 		DatabaseURL:  env.Or("DATABASE_URL", "postgres://aerial_admin:aerial_dev_pass_change_me@localhost:15432/aerial?sslmode=disable&search_path=billing"),
 		JWTSecret:    env.Or("JWT_SECRET", "dev-secret-change-in-production-32ch"),
-		JWTIssuer:    env.Or("JWT_ISSUER", "aerial-ran-platform"),
-		JWTAudience:  env.Or("JWT_AUDIENCE", "aerial-clients"),
+		JWTIssuer:    env.Or("JWT_ISSUER", jwtlib.DefaultIssuer),
+		JWTAudience:  env.Or("JWT_AUDIENCE", jwtlib.DefaultAudience),
 		OTelEndpoint: env.Or("OTEL_EXPORTER_OTLP_ENDPOINT", ""),
 		CORSOrigins:  env.Or("ALLOWED_ORIGINS", "http://localhost:3000,http://localhost:8080"),
 		Mount: func(_ context.Context, mux *http.ServeMux, pool *pgxpool.Pool, _ *jwtlib.Issuer) {

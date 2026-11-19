@@ -7,6 +7,7 @@ import (
 	"time"
 
 	"github.com/amayabdaniel/aerial-ran-platform/lib-aerial-go/env"
+	jwtlib "github.com/amayabdaniel/aerial-ran-platform/lib-aerial-go/jwt"
 )
 
 // Config is everything the service needs at boot.
@@ -28,8 +29,8 @@ func Load() (*Config, error) {
 		Port:         env.Or("PORT", "8081"),
 		DatabaseURL:  env.Or("DATABASE_URL", "postgres://aerial_admin:aerial_dev_pass_change_me@localhost:15432/aerial?sslmode=disable&search_path=iam"),
 		JWTSecret:    env.Or("JWT_SECRET", "dev-secret-change-in-production-32ch"),
-		JWTIssuer:    env.Or("JWT_ISSUER", "aerial-ran-platform"),
-		JWTAudience:  env.Or("JWT_AUDIENCE", "aerial-clients"),
+		JWTIssuer:    env.Or("JWT_ISSUER", jwtlib.DefaultIssuer),
+		JWTAudience:  env.Or("JWT_AUDIENCE", jwtlib.DefaultAudience),
 		OTelEndpoint: os.Getenv("OTEL_EXPORTER_OTLP_ENDPOINT"),
 		CORSOrigins:  env.Or("ALLOWED_ORIGINS", "http://localhost:3000,http://localhost:8080"),
 	}
